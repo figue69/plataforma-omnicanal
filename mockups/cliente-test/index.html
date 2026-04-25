@@ -136,7 +136,9 @@
 <script src="assets/perfiles-mock.js"></script>
 <script src="assets/casos-ejemplo.js"></script>
 <script>
-const API = "http://localhost:8000";
+const API = (window.location.hostname === 'localhost' && window.location.port !== '8000')
+  ? 'http://localhost:8000'
+  : '';
 const $ = id => document.getElementById(id);
 
 let contactsCache = [];
