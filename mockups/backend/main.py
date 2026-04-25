@@ -197,13 +197,13 @@ def get_crm(_: str = Depends(auth.get_current_agent_id)) -> Dict[str, Any]:
 
 
 @app.get("/crm/contacts")
-def list_contacts(_: str = Depends(auth.get_current_agent_id)) -> List[Dict[str, Any]]:
+def list_contacts() -> List[Dict[str, Any]]:
     crm = db.load_crm()
     return crm.get("agencias", []) + crm.get("pasajeros", [])
 
 
 @app.get("/crm/contacts/{contact_id}")
-def get_contact(contact_id: str, _: str = Depends(auth.get_current_agent_id)) -> Dict[str, Any]:
+def get_contact(contact_id: str) -> Dict[str, Any]:
     crm = db.load_crm()
     c = find_contact(crm, contact_id)
     if not c:
@@ -227,10 +227,7 @@ def update_contact_prompt(
 
 
 @app.post("/crm/contacts")
-def create_contact(
-    payload: NewContactPayload,
-    _: str = Depends(auth.get_current_agent_id),
-) -> Dict[str, Any]:
+def create_contact(payload: NewContactPayload) -> Dict[str, Any]:
     crm = db.load_crm()
     new_id = f"px-{uuid.uuid4().hex[:8]}" if payload.tipo == "pasajero" else f"ag-{uuid.uuid4().hex[:8]}"
     contact: Dict[str, Any] = {
