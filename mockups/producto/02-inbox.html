@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inbox · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;overflow:hidden;}
+  .conv-item:hover .quick-actions{display:flex;}
+  .quick-actions{display:none;}
+  .conv-item.active{background:#EFF6FF;}
+</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm">
+
+<!-- Sidebar de íconos -->
+<div id="sidebar"></div>
+
+<!-- Panel izquierdo: lista de conversaciones -->
+<div class="w-80 bg-white border-r border-slate-200 flex flex-col h-screen flex-shrink-0">
+  <!-- Header -->
+  <div class="px-4 pt-4 pb-2">
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="font-semibold text-slate-900">Inbox</h1>
+      <div class="flex items-center gap-1">
+        <span id="health-pill" class="text-xs text-slate-400">…</span>
+        <button onclick="loadInbox()" class="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-500" title="Actualizar">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </button>
+      </div>
+    </div>
+    <!-- Filtros -->
+    <div class="flex gap-1 mb-3">
+      <button data-filter="todos" class="filter-btn text-xs px-3 py-1 rounded-full bg-blue-600 text-white font-medium">Todos</button>
+      <button data-filter="mine" class="filter-btn text-xs px-3 py-1 rounded-full text-slate-600 hover:bg-slate-100">Míos</button>
+      <button data-filter="urgente" class="filter-btn text-xs px-3 py-1 rounded-full text-slate-600 hover:bg-slate-100">Urgentes</button>
+    </div>
+    <!-- Búsqueda -->
+    <div class="relative">
+      <svg class="absolute left-2.5 top-2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="search" placeholder="Buscar caso, cliente, destino…" class="w-full pl-8 pr-3 py-1.5 bg-slate-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+  </div>
+
+  <!-- Lista -->
+  <div id="conv-list" class="flex-1 overflow-y-auto divide-y divide-slate-100"></div>
+
+  <!-- Footer hint -->
+  <div class="px-4 py-2 border-t border-slate-100 text-xs text-slate-400">
+    Auto-refresh 5s · <a href="../cliente-test/index.html" target="_blank" class="underline text-blue-500">Abrir simulador →</a>
+  </div>
+</div>
+
+<!-- Panel derecho: placeholder cuando no hay caso abierto -->
+<div id="detail-frame" class="flex-1 flex items-center justify-center bg-slate-50 text-slate-400 text-sm">
+  <div class="text-center">
+    <svg class="w-12 h-12 mx-auto mb-3 text-slate-200" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+    <p>Seleccioná un caso para verlo</p>
+    <p class="text-xs mt-1">o enviá un mensaje desde el simulador de cliente</p>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('inbox');
+ui.wireHealth();
+
+let inboxData = [];
+let activeFilter = 'todos';
+let activeCaseId = null;
+
+// Cargar iframe del caso en el panel derecho
+function openCase(caseId){
+  activeCaseId = caseId;
+  session.lastCaseId = caseId;
+  document.querySelectorAll('.conv-item').forEach(el=>el.classList.toggle('active', el.dataset.id===caseId));
+  const frame = document.getElementById('detail-frame');
+  frame.innerHTML = `<iframe src="03-caso-detalle.html?id=${caseId}" class="w-full h-full border-0" id="case-iframe"></iframe>`;
+}
+
+async function loadInbox(){
+  try {
+    inboxData = await api.get('/inbox');
+    render();
+  } catch(e){ console.error(e); }
+}
+
+function render(){
+  const q = document.getElementById('search').value.toLowerCase();
+  let items = inboxData;
+  if(activeFilter==='mine') items = items.filter(r=>r.case.assigned_agent===session.agentId);
+  if(activeFilter==='urgente') items = items.filter(r=>r.case.urgency==='alta');
+  if(q) items = items.filter(r=>JSON.stringify(r).toLowerCase().includes(q));
+
+  document.getElementById('conv-list').innerHTML = items.map(r=>{
+    const c = r.case;
+    const m = r.last_message||{};
+    const contact = r.contact||{};
+    const unread = r.unread>0 ? `<span class="w-4 h-4 bg-blue-600 text-white text-[10px] rounded-full flex items-center justify-center font-bold">${r.unread}</span>` : '';
+    return `<div class="conv-item relative flex gap-3 px-4 py-3 cursor-pointer select-none ${activeCaseId===c.id?'active':''}" data-id="${c.id}" onclick="openCase('${c.id}')">
+      ${fmt.avatar(contact.nombre)}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center justify-between gap-1">
+          <span class="font-medium text-slate-900 truncate text-sm">${contact.nombre||c.titulo}</span>
+          <div class="flex items-center gap-1 flex-shrink-0">
+            ${unread}
+            <span class="text-[11px] text-slate-400">${fmt.date(m.ts||c.updated_at)}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-1 mt-0.5 text-xs text-slate-500 truncate">
+          ${fmt.channelIcon(m.channel||'whatsapp')}
+          <span class="truncate">${escapeHtml((m.text||c.titulo||'').slice(0,60))}</span>
+        </div>
+        <div class="flex flex-wrap gap-1 mt-1.5">
+          ${fmt.stageBadge(c.stage)}
+          ${fmt.urgencyBadge(c.urgency)}
+          ${(c.tags||[]).map(t=>`<span class="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">${t}</span>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  }).join('') || `<div class="p-8 text-center text-slate-400 text-xs">Sin casos${activeFilter!=='todos'?' con este filtro':''}.</div>`;
+
+  // Reseleccionar el activo
+  if(activeCaseId){
+    document.querySelectorAll('.conv-item').forEach(el=>el.classList.toggle('active',el.dataset.id===activeCaseId));
+  }
+}
+
+// Filtros
+document.querySelectorAll('.filter-btn').forEach(b=>{
+  b.onclick=()=>{
+    activeFilter=b.dataset.filter;
+    document.querySelectorAll('.filter-btn').forEach(x=>{
+      x.className = x.dataset.filter===activeFilter
+        ? 'filter-btn text-xs px-3 py-1 rounded-full bg-blue-600 text-white font-medium'
+        : 'filter-btn text-xs px-3 py-1 rounded-full text-slate-600 hover:bg-slate-100';
+    });
+    render();
+  };
+});
+document.getElementById('search').oninput = render;
+
+// Abrir último caso si venimos de otro lado
+const lastCase = session.lastCaseId;
+loadInbox().then(()=>{ if(lastCase) openCase(lastCase); });
+setInterval(loadInbox, 5000);
+</script>
+</body></html>

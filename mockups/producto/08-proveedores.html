@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proveedores · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+<div class="flex-1 overflow-y-auto">
+  <div class="max-w-3xl mx-auto px-6 py-5 space-y-5">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold text-slate-900">Proveedores</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Estado de APIs y tarifarios RAG. El copiloto consulta estas fuentes al generar sugerencias.</p>
+      </div>
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+    </div>
+
+    <div id="providers-list" class="space-y-3"></div>
+
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Proveedores offline / RAG</div>
+      <p class="text-xs text-slate-500 mb-3">Tarifarios en PDF cargados al RAG con versionado por fecha de vigencia. El copiloto cita la fecha del tarifario en cada sugerencia.</p>
+      <div class="space-y-2">
+        ${[
+          {nombre:'Tarifario Hoteles Europa 2026', vigencia:'2026-03-01 → 2026-09-30', estado:'activo'},
+          {nombre:'Tarifario Cruceros Caribe Q3', vigencia:'2026-07-01 → 2026-09-30', estado:'activo'},
+          {nombre:'Tarifario Grupos Bariloche', vigencia:'2026-06-01 → 2026-08-31', estado:'vencido'},
+        ].map(t=>`
+          <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+            <div>
+              <div class="font-medium text-sm">${t.nombre}</div>
+              <div class="text-xs text-slate-500">${t.vigencia}</div>
+            </div>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full ${t.estado==='activo'?'bg-green-100 text-green-700':'bg-red-100 text-red-600'}">${t.estado}</span>
+          </div>`).join('')}
+      </div>
+      <button class="mt-3 text-xs text-blue-600 hover:underline">+ Subir nuevo tarifario (próxima fase)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('mas');
+ui.wireHealth();
+
+const PROVIDERS = [
+  {nombre:'Tourbo', tipo:'API · Aéreos', desc:'Consulta de vuelos y disponibilidad en tiempo real.', envVar:'TOURBO_API_KEY', key:'tourbo_configured'},
+  {nombre:'SerpAPI', tipo:'API · Vuelos + Hoteles', desc:'Google Flights y Hotels como fallback o complemento.', envVar:'SERPAPI_KEY', key:'serpapi_configured'},
+  {nombre:'Anthropic Claude', tipo:'IA · Haiku + Sonnet', desc:'Clasificación, extracción y generación de sugerencias.', envVar:'ANTHROPIC_API_KEY', key:'ai_real'},
+];
+
+(async ()=>{
+  const h = await api.get('/health');
+  document.getElementById('providers-list').innerHTML = PROVIDERS.map(p=>{
+    const ok = h[p.key];
+    return `<div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl ${ok?'bg-green-100':'bg-slate-100'} flex items-center justify-center flex-shrink-0">
+          <span class="text-lg">${ok?'✓':'○'}</span>
+        </div>
+        <div>
+          <div class="font-semibold text-slate-900">${p.nombre}</div>
+          <div class="text-xs text-slate-500">${p.tipo} · ${p.desc}</div>
+          <div class="text-[10px] text-slate-400 mt-0.5">Variable: <code>${p.envVar}</code></div>
+        </div>
+      </div>
+      <div class="flex flex-col items-end gap-1">
+        <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${ok?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}">${ok?'Configurado':'Mock / sin clave'}</span>
+        ${!ok?`<span class="text-[10px] text-slate-400">Cargá la clave en .env</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
+})();
+</script>
+</body></html>

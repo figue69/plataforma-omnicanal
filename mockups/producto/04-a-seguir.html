@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A seguir · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- Header -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div>
+      <h1 class="font-semibold text-slate-900">A seguir</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Recordatorios y CTAs que el copiloto detecta sobre tus casos abiertos.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+      <button id="generate"
+        class="bg-slate-900 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Recalcular
+      </button>
+    </div>
+  </div>
+
+  <!-- Contenido -->
+  <div class="flex-1 overflow-y-auto px-6 py-5">
+    <div id="list" class="max-w-2xl space-y-3"></div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('aseguir');
+ui.wireHealth();
+
+async function load(){
+  const items = await api.get('/reminders?agent_id=' + session.agentId);
+  document.getElementById('list').innerHTML = items.length
+    ? items.map(r => `
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">${r.kind.replace(/_/g,' ')}</div>
+            <div class="font-semibold text-slate-900">${r.title}</div>
+            <div class="text-xs text-slate-500 mt-1">${r.body_hint || ''}</div>
+            ${r.case_id
+              ? `<a class="text-xs text-blue-600 hover:underline mt-1.5 inline-block" href="03-caso-detalle.html?id=${r.case_id}">Ver caso →</a>`
+              : ''}
+          </div>
+          <div class="flex flex-col gap-1.5 flex-shrink-0">
+            <button class="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+              onclick="draft('${r.id}', this)">Generar mensaje</button>
+            <button class="text-xs border border-slate-200 hover:bg-slate-50 text-slate-600 px-3 py-1.5 rounded-lg transition-colors"
+              onclick="dismiss('${r.id}')">Descartar</button>
+          </div>
+        </div>
+        <div id="draft-${r.id}" class="hidden mt-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed"></div>
+      </div>`)
+    .join('')
+    : `<div class="bg-white rounded-xl border border-slate-200 p-8 text-center">
+        <svg class="w-8 h-8 mx-auto mb-2 text-slate-200" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+        <p class="text-slate-500 text-xs">Sin recordatorios pendientes.</p>
+        <p class="text-slate-400 text-xs mt-1">Apretá "Recalcular" para escanear los casos abiertos.</p>
+      </div>`;
+}
+
+window.draft = async (id, btn) => {
+  const orig = btn.textContent;
+  btn.textContent = 'Generando…'; btn.disabled = true;
+  try {
+    const r = await api.post('/reminders/' + id + '/draft');
+    const el = document.getElementById('draft-' + id);
+    el.textContent = r.draft || '(sin draft)';
+    el.classList.remove('hidden');
+  } finally { btn.textContent = orig; btn.disabled = false; }
+};
+
+window.dismiss = async (id) => {
+  await api.post('/reminders/' + id + '/dismiss');
+  load();
+};
+
+document.getElementById('generate').onclick = async () => {
+  const btn = document.getElementById('generate');
+  btn.disabled = true;
+  try {
+    await api.post('/reminders/generate?agent_id=' + session.agentId);
+    await load();
+  } finally { btn.disabled = false; }
+};
+
+load();
+</script>
+</body></html>

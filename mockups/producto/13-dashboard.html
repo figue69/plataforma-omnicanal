@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 overflow-y-auto">
+  <div class="max-w-5xl mx-auto px-6 py-5 space-y-5">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold text-slate-900">Dashboard</h1>
+        <p class="text-xs text-slate-500 mt-0.5">Métricas operativas y consumo de IA en tiempo real.</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="health-pill" class="text-xs text-slate-400"></span>
+        <button onclick="load()" class="text-xs border border-slate-200 bg-white px-3 py-1.5 rounded-lg hover:bg-slate-50">Actualizar</button>
+      </div>
+    </div>
+
+    <!-- KPIs operativos -->
+    <div id="kpis" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+
+    <!-- Fila central: consumo IA + aceptación -->
+    <div class="grid md:grid-cols-2 gap-4">
+
+      <!-- Consumo IA por modelo -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Consumo IA por modelo</div>
+        <div id="by-model" class="space-y-3"></div>
+      </div>
+
+      <!-- Aceptación de sugerencias -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Aceptación de sugerencias IA</div>
+        <div id="acceptance" class="space-y-3"></div>
+        <div class="mt-4 pt-3 border-t border-slate-100">
+          <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Consumo por agente</div>
+          <div id="by-agent" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Consumo por tarea -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Llamadas IA por tarea</div>
+      <div id="by-task" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    </div>
+
+    <!-- Casos por etapa (embudo) -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Casos por etapa del pipeline</div>
+      <div id="funnel" class="space-y-2"></div>
+    </div>
+
+    <!-- Nota modo mock -->
+    <div id="mock-note" class="hidden bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+      <b>Modo mock:</b> Los contadores de tokens son 0 porque la IA está en modo determinístico (sin ANTHROPIC_API_KEY).
+      Cargá la clave en <code>.env</code> para ver métricas reales de consumo.
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('dashboard');
+ui.wireHealth();
+
+const STAGE_LABELS = {
+  consulta:'Consulta', cotizacion:'Cotización', reserva_tentativa:'Reserva tentativa',
+  sena:'Seña', pago_total:'Pago total', documentacion:'Documentación', pre_viaje:'Pre-viaje',
+};
+const STAGE_COLORS = {
+  consulta:'bg-slate-400', cotizacion:'bg-blue-500', reserva_tentativa:'bg-amber-500',
+  sena:'bg-orange-500', pago_total:'bg-green-500', documentacion:'bg-purple-500', pre_viaje:'bg-indigo-500',
+};
+
+function bar(value, max, colorClass='bg-blue-500'){
+  const pct = max>0 ? Math.round((value/max)*100) : 0;
+  return `<div class="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+    <div class="${colorClass} h-2 rounded-full transition-all" style="width:${pct}%"></div>
+  </div>`;
+}
+
+async function load(){
+  const [metrics, inbox, health] = await Promise.all([
+    api.get('/metrics'),
+    api.get('/inbox'),
+    api.get('/health'),
+  ]);
+
+  const tok = metrics.tokens;
+  const op = metrics.operativo;
+  const ai = op.aceptacion_ia;
+  const isMock = !health.ai_real;
+  document.getElementById('mock-note').classList.toggle('hidden', !isMock || tok.calls > 0);
+
+  // ── KPIs ──
+  const totalOut = ai.tal_cual + ai.editadas + ai.otro;
+  const pctAI = totalOut > 0 ? Math.round(((ai.tal_cual+ai.editadas)/totalOut)*100) : 0;
+  document.getElementById('kpis').innerHTML = [
+    {label:'Casos abiertos',  value: op.casos_abiertos, sub:`de ${op.casos_total} totales`, color:'blue'},
+    {label:'Mensajes recibidos', value: op.mensajes_in, sub:'mensajes de clientes', color:'slate'},
+    {label:'Respuestas enviadas', value: op.mensajes_out, sub:'por agentes', color:'slate'},
+    {label:'Costo IA total',  value:`USD ${tok.total_cost_usd.toFixed(4)}`, sub:`${tok.calls} llamadas`, color: tok.total_cost_usd>1?'red':'green'},
+  ].map(k=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-2xl font-bold text-slate-900">${k.value}</div>
+      <div class="text-xs font-semibold text-slate-600 mt-0.5">${k.label}</div>
+      <div class="text-xs text-slate-400 mt-0.5">${k.sub}</div>
+    </div>`).join('');
+
+  // ── Por modelo ──
+  const models = Object.entries(tok.by_model);
+  const maxCost = Math.max(...models.map(([,v])=>v.cost_usd), 0.0001);
+  document.getElementById('by-model').innerHTML = models.length
+    ? models.map(([m,v])=>`
+      <div>
+        <div class="flex justify-between text-xs mb-1">
+          <span class="font-medium">${m.split('-').slice(1,3).join(' ')}</span>
+          <span class="text-slate-500">${v.calls} llamadas · ${v.in.toLocaleString()}↑ ${v.out.toLocaleString()}↓ tokens · <b>USD ${v.cost_usd.toFixed(4)}</b></span>
+        </div>
+        <div class="flex items-center gap-2">
+          ${bar(v.cost_usd, maxCost, m.includes('sonnet')?'bg-blue-500':'bg-purple-400')}
+        </div>
+      </div>`).join('')
+    : '<div class="text-xs text-slate-400 italic">Sin datos aún (enviá un mensaje para generar métricas).</div>';
+
+  // ── Aceptación ──
+  const totalSent = ai.tal_cual + ai.editadas + ai.otro;
+  document.getElementById('acceptance').innerHTML = totalSent ? [
+    {label:'Tal cual (sin editar)', value: ai.tal_cual, color:'bg-green-500'},
+    {label:'Editadas antes de enviar', value: ai.editadas, color:'bg-blue-500'},
+    {label:'Escrita por el agente', value: ai.otro, color:'bg-slate-300'},
+  ].map(row=>`
+    <div>
+      <div class="flex justify-between text-xs mb-1">
+        <span>${row.label}</span>
+        <span class="font-semibold">${row.value} <span class="text-slate-400 font-normal">(${totalSent>0?Math.round(row.value/totalSent*100):0}%)</span></span>
+      </div>
+      ${bar(row.value, totalSent, row.color)}
+    </div>`).join('')
+    : '<div class="text-xs text-slate-400 italic">Sin respuestas enviadas aún.</div>';
+
+  // ── Por agente ──
+  const agentEntries = Object.entries(tok.by_agent).filter(([k])=>k!=='n/a');
+  document.getElementById('by-agent').innerHTML = agentEntries.length
+    ? agentEntries.map(([id,v])=>`
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-slate-700">${id}</span>
+        <span class="text-slate-500">${v.calls} llamadas · USD ${v.cost_usd.toFixed(4)}</span>
+      </div>`).join('')
+    : '<div class="text-xs text-slate-400 italic">Sin datos por agente.</div>';
+
+  // ── Por tarea ──
+  const tasks = Object.entries(tok.by_task);
+  const maxT = Math.max(...tasks.map(([,v])=>v.calls), 1);
+  document.getElementById('by-task').innerHTML = tasks.length
+    ? tasks.map(([t,v])=>`
+      <div class="bg-slate-50 rounded-lg p-3 border border-slate-100">
+        <div class="text-xs font-semibold text-slate-700 mb-1">${t}</div>
+        <div class="text-lg font-bold text-slate-900">${v.calls}</div>
+        <div class="text-[10px] text-slate-400">llamadas · USD ${v.cost_usd.toFixed(4)}</div>
+      </div>`).join('')
+    : '<div class="col-span-4 text-xs text-slate-400 italic">Sin llamadas registradas.</div>';
+
+  // ── Embudo ──
+  const stageCounts = {};
+  inbox.forEach(r=>{ const s=r.case.stage; stageCounts[s]=(stageCounts[s]||0)+1; });
+  const maxS = Math.max(...Object.values(stageCounts), 1);
+  const stageOrder = ['consulta','cotizacion','reserva_tentativa','sena','pago_total','documentacion','pre_viaje'];
+  document.getElementById('funnel').innerHTML = stageOrder.map(s=>{
+    const n = stageCounts[s]||0;
+    return `<div class="flex items-center gap-3">
+      <span class="text-xs text-slate-600 w-36 flex-shrink-0">${STAGE_LABELS[s]||s}</span>
+      <div class="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+        <div class="${STAGE_COLORS[s]||'bg-slate-400'} h-3 rounded-full transition-all" style="width:${maxS>0?Math.round(n/maxS*100):0}%"></div>
+      </div>
+      <span class="text-xs font-semibold text-slate-700 w-6 text-right">${n}</span>
+    </div>`;
+  }).join('');
+}
+
+load();
+setInterval(load, 10000);
+</script>
+</body></html>

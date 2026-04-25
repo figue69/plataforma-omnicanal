@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Simulador de Cliente</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
+  .bubble-out { background: #25D366; color: white; border-radius: 12px 0 12px 12px; }
+  .bubble-in  { background: #F1F5F9; color: #0f172a; border-radius: 0 12px 12px 12px; }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+
+<div class="max-w-2xl mx-auto p-4">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-lg font-semibold text-slate-900">Simulador de Cliente</h1>
+      <p class="text-xs text-slate-500">Enviá mensajes como si fueras el cliente. El agente los ve en la plataforma.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span id="api-status" class="text-xs px-2 py-1 rounded bg-slate-200 text-slate-600">backend ?</span>
+      <a href="../producto/02-inbox.html" target="_blank" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg">Ver inbox del agente →</a>
+    </div>
+  </div>
+
+  <!-- Config del contacto -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
+    <div class="grid grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-xs font-semibold text-slate-600 block mb-1">Tipo de cliente</label>
+        <select id="contact-type" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="agencia">Agencia (B2B)</option>
+          <option value="pasajero">Pasajero (B2C)</option>
+          <option value="nuevo">Nuevo / Desconocido</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-slate-600 block mb-1">Canal</label>
+        <select id="channel" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+          <option value="whatsapp">💬 WhatsApp</option>
+          <option value="email">✉️ Email</option>
+          <option value="instagram">📷 Instagram</option>
+          <option value="telegram">✈️ Telegram</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Contacto existente -->
+    <div id="existing-contact-row" class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs font-semibold text-slate-600 block mb-1">Perfil</label>
+        <select id="contact-id" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"></select>
+      </div>
+      <div id="vendedor-wrap">
+        <label class="text-xs font-semibold text-slate-600 block mb-1">Vendedor</label>
+        <select id="vendedor-id" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"></select>
+      </div>
+    </div>
+
+    <!-- Nuevo contacto desconocido -->
+    <div id="new-contact-row" class="hidden space-y-2">
+      <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700 font-medium">
+        Contacto desconocido — el agente podrá guardarlo desde la plataforma.
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1">Nombre *</label>
+          <input id="new-nombre" placeholder="Juan Pérez" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1">Tipo</label>
+          <select id="new-tipo" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <option value="pasajero">Pasajero</option>
+            <option value="agencia">Agencia</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1">Email</label>
+          <input id="new-email" placeholder="juan@email.com" type="email" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-600 block mb-1">WhatsApp</label>
+          <input id="new-whatsapp" placeholder="+5491140000000" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+      </div>
+      <button id="btn-create-contact" class="w-full bg-amber-500 hover:bg-amber-600 text-white py-1.5 rounded-lg text-sm font-semibold transition-colors">
+        Crear contacto y continuar
+      </button>
+      <p id="created-contact-info" class="text-xs text-green-700 hidden"></p>
+    </div>
+
+    <!-- Email asunto -->
+    <div id="subject-row" class="hidden mt-3">
+      <label class="text-xs font-semibold text-slate-600 block mb-1">Asunto del email</label>
+      <input id="subject" placeholder="Consulta sobre viaje a Europa" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+    </div>
+  </div>
+
+  <!-- Perfil del contacto activo -->
+  <div id="profile-card" class="bg-white rounded-2xl shadow-sm border border-slate-200 px-4 py-3 mb-3 hidden">
+    <div class="text-xs font-semibold text-slate-500 mb-1">Perfil activo</div>
+    <div id="profile-summary" class="text-xs text-slate-700"></div>
+  </div>
+
+  <!-- Casos de ejemplo -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-3">
+    <div class="text-xs font-semibold text-slate-500 mb-2">Mensajes de ejemplo — click para usar</div>
+    <div id="examples" class="flex flex-wrap gap-1.5"></div>
+  </div>
+
+  <!-- Conversación -->
+  <div class="bg-white rounded-2xl shadow-sm border border-slate-200 mb-3 overflow-hidden">
+    <div id="conversation" class="p-4 space-y-2 max-h-72 overflow-y-auto bg-slate-50 min-h-[80px]">
+      <p class="text-slate-400 text-xs italic text-center pt-4">Acá aparecerá la conversación.</p>
+    </div>
+    <div class="p-4 border-t border-slate-100">
+      <textarea id="message" rows="3"
+        class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none placeholder-slate-400"
+        placeholder="Escribí el mensaje del cliente…"></textarea>
+      <div class="flex justify-between items-center mt-2">
+        <span id="result-info" class="text-xs text-slate-500"></span>
+        <button id="send"
+          class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors">
+          Enviar mensaje
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="assets/perfiles-mock.js"></script>
+<script src="assets/casos-ejemplo.js"></script>
+<script>
+const API = "http://localhost:8000";
+const $ = id => document.getElementById(id);
+
+let contactsCache = [];
+let activeContactId = null; // el que se usa para enviar
+
+async function checkHealth(){
+  try {
+    const r = await fetch(`${API}/health`).then(r=>r.json());
+    $('api-status').textContent = `backend OK · IA ${r.ai_real?'real':'mock'}`;
+    $('api-status').className = 'text-xs px-2 py-1 rounded bg-green-100 text-green-800';
+  } catch(e){
+    $('api-status').textContent = 'backend OFF';
+    $('api-status').className = 'text-xs px-2 py-1 rounded bg-red-100 text-red-800';
+  }
+}
+
+async function loadContacts(){
+  const r = await fetch(`${API}/crm/contacts`);
+  contactsCache = await r.json();
+  refreshContactSelector();
+}
+
+function refreshContactSelector(){
+  const tipo = $('contact-type').value;
+  if(tipo === 'nuevo') return;
+  const list = contactsCache.filter(c => c.tipo === tipo);
+  $('contact-id').innerHTML = list.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('');
+  activeContactId = list[0]?.id || null;
+  refreshVendedorSelector();
+  refreshProfileCard();
+  refreshExamples();
+  loadConversation();
+}
+
+function currentContact(){
+  return contactsCache.find(c=>c.id === $('contact-id').value);
+}
+
+function refreshVendedorSelector(){
+  const c = currentContact();
+  const show = c?.tipo === 'agencia';
+  $('vendedor-wrap').classList.toggle('hidden', !show);
+  if(show) $('vendedor-id').innerHTML = (c.vendedores||[]).map(v=>`<option value="${v.id}">${v.nombre}</option>`).join('');
+}
+
+function refreshProfileCard(){
+  const c = currentContact();
+  if(!c){ $('profile-card').classList.add('hidden'); return; }
+  $('profile-card').classList.remove('hidden');
+  $('profile-summary').innerHTML = `<b>${c.nombre}</b> · ${c.tipo}<br><span class="text-slate-500 italic">${(c.system_prompt||'(sin system prompt)').slice(0,160)}</span>`;
+}
+
+function refreshExamples(){
+  const tipo = $('contact-type').value === 'nuevo' ? 'pasajero' : $('contact-type').value;
+  const ex = window.CASOS_EJEMPLO[tipo]||[];
+  $('examples').innerHTML = ex.map((e,i)=>
+    `<button data-i="${i}" class="ex-btn bg-slate-100 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 hover:border-blue-300 text-xs px-2.5 py-1 rounded-lg transition-colors">${e.titulo}</button>`
+  ).join('');
+  $('examples').querySelectorAll('.ex-btn').forEach(b=>{
+    b.onclick=()=>{
+      const e = ex[+b.dataset.i];
+      $('message').value = e.texto;
+      if(e.subject) $('subject').value = e.subject;
+    };
+  });
+}
+
+// Toggle secciones según tipo
+$('contact-type').addEventListener('change', ()=>{
+  const tipo = $('contact-type').value;
+  const isNew = tipo === 'nuevo';
+  $('existing-contact-row').classList.toggle('hidden', isNew);
+  $('new-contact-row').classList.toggle('hidden', !isNew);
+  if(!isNew) refreshContactSelector();
+  else { $('profile-card').classList.add('hidden'); activeContactId = null; }
+  refreshExamples();
+});
+
+$('channel').addEventListener('change', ()=>{
+  $('subject-row').classList.toggle('hidden', $('channel').value !== 'email');
+});
+
+$('contact-id').addEventListener('change', ()=>{
+  activeContactId = $('contact-id').value;
+  refreshVendedorSelector();
+  refreshProfileCard();
+  loadConversation();
+});
+
+// Crear contacto nuevo
+$('btn-create-contact').onclick = async ()=>{
+  const nombre = $('new-nombre').value.trim();
+  if(!nombre){ alert('El nombre es obligatorio'); return; }
+  const btn = $('btn-create-contact');
+  btn.textContent = 'Creando…'; btn.disabled = true;
+  try {
+    const r = await fetch(`${API}/crm/contacts`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        tipo: $('new-tipo').value,
+        nombre,
+        email: $('new-email').value||null,
+        whatsapp: $('new-whatsapp').value||null,
+      }),
+    }).then(r=>r.json());
+    contactsCache.push(r);
+    activeContactId = r.id;
+    $('created-contact-info').textContent = `✓ Contacto creado: ${r.nombre} (ID: ${r.id})`;
+    $('created-contact-info').classList.remove('hidden');
+    btn.textContent = '✓ Creado';
+    loadConversation();
+  } catch(e){
+    btn.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+  }
+};
+
+// Conversación
+async function loadConversation(){
+  const cid = activeContactId || $('contact-id').value;
+  if(!cid) return;
+  try {
+    const msgs = await fetch(`${API}/messages?contact_id=${cid}`).then(r=>r.json());
+    if(!msgs.length){
+      $('conversation').innerHTML='<p class="text-slate-400 text-xs italic text-center pt-4">Aún no hay mensajes.</p>';
+      return;
+    }
+    $('conversation').innerHTML = msgs.map(m=>{
+      const isAgente = m.direction === 'out';
+      return `<div class="flex ${isAgente?'justify-start':'justify-end'}">
+        <div class="${isAgente?'bubble-in':'bubble-out'} px-3 py-2 max-w-[85%] text-sm whitespace-pre-wrap">
+          <div class="text-[10px] opacity-60 mb-1">${isAgente?'Agente':'Vos'} · ${m.channel} · ${(m.ts||'').slice(0,16).replace('T',' ')}</div>
+          ${esc(m.text)}
+        </div>
+      </div>`;
+    }).join('');
+    $('conversation').scrollTop = $('conversation').scrollHeight;
+  } catch(e){}
+}
+
+function esc(s){ return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// Enviar mensaje
+$('send').addEventListener('click', async ()=>{
+  const cid = activeContactId || $('contact-id').value;
+  if(!cid){ alert('Seleccioná o creá un contacto primero'); return; }
+  const text = $('message').value.trim();
+  if(!text) return;
+  $('send').disabled=true; $('send').textContent='Enviando…';
+  try {
+    const payload = {
+      contact_id: cid,
+      channel: $('channel').value,
+      text,
+      subject: $('subject').value||null,
+      vendedor_id: currentContact()?.tipo==='agencia' ? $('vendedor-id').value : null,
+    };
+    const data = await fetch(`${API}/messages`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),
+    }).then(r=>r.json());
+    $('result-info').innerHTML = `Caso: <b>${data.case_id}</b> · ${data.classification.type} · ${data.suggestions.length} sugerencias`;
+    $('message').value='';
+    loadConversation();
+  } catch(e){
+    $('result-info').textContent='Error: '+e.message;
+  } finally {
+    $('send').disabled=false; $('send').textContent='Enviar mensaje';
+  }
+});
+
+// Poll respuestas del agente
+setInterval(loadConversation, 4000);
+
+checkHealth();
+loadContacts().then(refreshExamples);
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Guardia 24/7 · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}
+  @keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.5}}
+  .urgent-pulse{animation:pulse-red 1.5s infinite;}
+</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+<div class="flex-1 overflow-y-auto">
+  <div class="max-w-3xl mx-auto px-6 py-5 space-y-5">
+
+    <h1 class="text-lg font-semibold text-slate-900">Guardia 24/7</h1>
+
+    <!-- Banner de urgencia (simulado) -->
+    <div id="urgency-banner" class="hidden bg-red-600 text-white rounded-xl p-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="urgent-pulse text-2xl">🚨</span>
+        <div>
+          <div class="font-bold">Urgencia crítica — Familia Pérez · Madrid</div>
+          <div class="text-sm opacity-90">Pasaporte robado. Escalamiento activo. Sin ACK del agente de guardia.</div>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="ackUrgency()" class="bg-white text-red-700 font-semibold px-3 py-1.5 rounded-lg text-xs">Confirmar atención</button>
+        <a href="03-caso-detalle.html?id=c-perez-001" class="bg-red-800 text-white font-semibold px-3 py-1.5 rounded-lg text-xs">Ver caso →</a>
+      </div>
+    </div>
+
+    <!-- Turno actual -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Turno actual</div>
+      <div id="current-shift" class="flex items-center gap-4"></div>
+    </div>
+
+    <!-- Rotación de turnos -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Rotación de turnos</div>
+      <div class="space-y-2" id="shift-list"></div>
+      <button class="mt-3 text-xs text-blue-600 hover:underline">+ Agregar turno</button>
+    </div>
+
+    <!-- Escalamiento configurado -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Secuencia de escalamiento (en orden, con timeout)</div>
+      <div class="space-y-2">
+        ${[
+          {paso:1, canal:'Web Push', desc:'Al navegador si está abierto', timeout:'2 min', color:'blue'},
+          {paso:2, canal:'Telegram Bot', desc:'Al celular del agente de guardia', timeout:'5 min', color:'sky'},
+          {paso:3, canal:'WhatsApp emergencia', desc:'Al número personal del agente', timeout:'5 min', color:'green'},
+          {paso:4, canal:'Llamada telefónica (Twilio)', desc:'"Tenés una urgencia, presioná 1 para confirmar"', timeout:'último recurso', color:'red'},
+        ].map(e=>`
+          <div class="flex items-center gap-3">
+            <span class="w-6 h-6 rounded-full bg-${e.color}-100 text-${e.color}-700 text-xs font-bold flex items-center justify-center flex-shrink-0">${e.paso}</span>
+            <div class="flex-1">
+              <span class="font-medium">${e.canal}</span>
+              <span class="text-slate-500 ml-2 text-xs">${e.desc}</span>
+            </div>
+            <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">timeout: ${e.timeout}</span>
+          </div>`).join('')}
+      </div>
+      <div class="mt-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        En el mockup los escalamientos se simulan visualmente. Las integraciones reales (Twilio, Telegram Bot) se activan en el prototipo de fase 1.
+      </div>
+    </div>
+
+    <!-- Log de escalamientos -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Log de escalamientos</div>
+      <div id="escalation-log" class="space-y-2"></div>
+    </div>
+
+    <!-- Botón de prueba -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+      <div>
+        <div class="font-semibold">Simular urgencia crítica</div>
+        <div class="text-xs text-slate-500 mt-0.5">Dispara el banner de escalamiento y agrega una entrada al log.</div>
+      </div>
+      <button onclick="simulateUrgency()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold">Simular</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('mas');
+ui.wireHealth('health-dummy');
+
+const SHIFTS = [
+  {agente:'ag-ana',    nombre:'Ana López',    turno:'Lun–Vie 9–18', hoy:true},
+  {agente:'ag-carlos', nombre:'Carlos Rivero', turno:'Lun–Dom 18–9 (guardia nocturna)', hoy:true},
+];
+const log = [];
+
+function renderShifts(){
+  const current = SHIFTS.find(s=>s.hoy && s.agente==='ag-carlos');
+  document.getElementById('current-shift').innerHTML = current ? `
+    ${fmt.avatar(current.nombre)}
+    <div>
+      <div class="font-semibold">${current.nombre}</div>
+      <div class="text-xs text-slate-500">${current.turno}</div>
+      <div class="flex items-center gap-1 mt-1"><span class="w-2 h-2 bg-green-500 rounded-full"></span><span class="text-xs text-green-600">En línea</span></div>
+    </div>` : '<div class="text-xs text-slate-400 italic">Sin agente de guardia asignado para este turno.</div>';
+
+  document.getElementById('shift-list').innerHTML = SHIFTS.map(s=>`
+    <div class="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+      <div class="flex items-center gap-2.5">
+        ${fmt.avatar(s.nombre)}
+        <div>
+          <div class="font-medium">${s.nombre}</div>
+          <div class="text-xs text-slate-500">${s.turno}</div>
+        </div>
+      </div>
+      ${s.hoy?'<span class="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Turno activo</span>':''}
+    </div>`).join('');
+}
+
+function renderLog(){
+  document.getElementById('escalation-log').innerHTML = log.length
+    ? log.map(e=>`
+      <div class="flex items-start gap-2 text-xs">
+        <span class="text-slate-400 flex-shrink-0">${e.ts}</span>
+        <span class="text-red-600 font-medium">[${e.nivel}]</span>
+        <span class="text-slate-700">${e.msg}</span>
+        ${e.ack?'<span class="ml-auto text-green-600 font-semibold">ACK ✓</span>':'<span class="ml-auto text-amber-500">Sin ACK</span>'}
+      </div>`).join('')
+    : '<div class="text-xs text-slate-400 italic">Sin escalamientos registrados. Usá "Simular" para ver el flujo.</div>';
+}
+
+window.simulateUrgency = function(){
+  document.getElementById('urgency-banner').classList.remove('hidden');
+  const now = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  log.unshift({ts:now, nivel:'Web Push', msg:'Urgencia enviada a Carlos Rivero — "Familia Pérez, pasaporte robado en Madrid"', ack:false});
+  setTimeout(()=>{
+    log.unshift({ts:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}), nivel:'Telegram', msg:'Sin ACK en 2 min. Escalando a Telegram Bot…', ack:false});
+    renderLog();
+  }, 3000);
+  renderLog();
+};
+
+window.ackUrgency = function(){
+  document.getElementById('urgency-banner').classList.add('hidden');
+  if(log[0]) log[0].ack = true;
+  const now = new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
+  log.unshift({ts:now, nivel:'ACK', msg:`Urgencia confirmada por ${session.agentName}`, ack:true});
+  renderLog();
+};
+
+renderShifts();
+renderLog();
+</script>
+</body></html>

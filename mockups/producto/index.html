@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Plataforma Omnicanal · Mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+<div class="flex-1 overflow-y-auto px-8 py-6">
+  <div class="max-w-4xl mx-auto">
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-xl font-semibold text-slate-900">Plataforma Omnicanal · Mockup</h1>
+        <p class="text-xs text-slate-500 mt-1">Para simular mensajes entrantes abrí el <a href="../cliente-test/index.html" target="_blank" class="text-blue-600 underline">Simulador de Cliente</a> en otra pestaña.</p>
+      </div>
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+    </div>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <a href="01-login.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">01</div>
+        <div class="font-semibold text-slate-900">Login</div>
+        <p class="text-xs text-slate-500 mt-1">Selección de agente (mockeado).</p>
+      </a>
+      <a href="02-inbox.html" class="bg-white rounded-xl border-2 border-blue-500 p-4 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-blue-500 font-medium mb-1">02 · CLAVE</div>
+        <div class="font-semibold text-slate-900">Inbox omnicanal</div>
+        <p class="text-xs text-slate-500 mt-1">Casos con canal, urgencia, etapa. Auto-refresh 5s.</p>
+      </a>
+      <a href="03-caso-detalle.html" class="bg-white rounded-xl border-2 border-blue-500 p-4 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-blue-500 font-medium mb-1">03 · CLAVE</div>
+        <div class="font-semibold text-slate-900">Caso + Copiloto IA</div>
+        <p class="text-xs text-slate-500 mt-1">Timeline, 3 sugerencias ranqueadas, tags, "Pedir a la IA".</p>
+      </a>
+      <a href="04-a-seguir.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">04</div>
+        <div class="font-semibold text-slate-900">A seguir</div>
+        <p class="text-xs text-slate-500 mt-1">Recordatorios proactivos del copiloto.</p>
+      </a>
+      <a href="05-mi-perfil.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">05</div>
+        <div class="font-semibold text-slate-900">Mi perfil</div>
+        <p class="text-xs text-slate-500 mt-1">System prompt del agente + métricas personales.</p>
+      </a>
+      <a href="06-crm-agencia.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">06</div>
+        <div class="font-semibold text-slate-900">CRM · Agencias</div>
+        <p class="text-xs text-slate-500 mt-1">Ficha B2B: vendedores, datos comerciales, casos activos, prompt.</p>
+      </a>
+      <a href="06b-crm-pasajero.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">06b</div>
+        <div class="font-semibold text-slate-900">CRM · Pasajeros</div>
+        <p class="text-xs text-slate-500 mt-1">Ficha B2C: historial de viajes, canales, prompt.</p>
+      </a>
+      <a href="07-pipeline.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">07</div>
+        <div class="font-semibold text-slate-900">Pipeline</div>
+        <p class="text-xs text-slate-500 mt-1">Kanban arrastrable por etapa del embudo de ventas.</p>
+      </a>
+      <a href="08-proveedores.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">08</div>
+        <div class="font-semibold text-slate-900">Proveedores</div>
+        <p class="text-xs text-slate-500 mt-1">Estado de APIs (Tourbo, SerpAPI) y tarifarios RAG.</p>
+      </a>
+      <a href="09-afk-reglas.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">09</div>
+        <div class="font-semibold text-slate-900">AFK / Reglas</div>
+        <p class="text-xs text-slate-500 mt-1">Reglas de auto-respuesta y plantillas de mensaje.</p>
+      </a>
+      <a href="10-guardia.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">10</div>
+        <div class="font-semibold text-slate-900">Guardia 24/7</div>
+        <p class="text-xs text-slate-500 mt-1">Turnos, escalamiento (Web Push → Telegram → WA → Llamada).</p>
+      </a>
+      <a href="11-auto-tuning.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">11</div>
+        <div class="font-semibold text-slate-900">Auto-tuning de prompts</div>
+        <p class="text-xs text-slate-500 mt-1">Cola de revisiones con diff, aprobar/rechazar/editar.</p>
+      </a>
+      <a href="12-admin.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">12</div>
+        <div class="font-semibold text-slate-900">Administración</div>
+        <p class="text-xs text-slate-500 mt-1">Canales · Reglas por canal · Permisos LLM · Tags · Usuarios.</p>
+      </a>
+      <a href="13-dashboard.html" class="bg-white rounded-xl border border-slate-200 p-4 hover:border-blue-300 hover:shadow-sm transition-all">
+        <div class="text-[10px] text-slate-400 font-medium mb-1">13</div>
+        <div class="font-semibold text-slate-900">Dashboard</div>
+        <p class="text-xs text-slate-500 mt-1">KPIs, consumo IA por modelo/tarea/agente, embudo.</p>
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('mas');
+ui.wireHealth();
+</script>
+</body></html>

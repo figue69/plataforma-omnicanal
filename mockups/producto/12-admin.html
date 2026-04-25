@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Administración · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- Header -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 flex-shrink-0">
+    <div class="flex items-center justify-between">
+      <h1 class="font-semibold text-slate-900">Administración</h1>
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+    </div>
+    <!-- Tabs -->
+    <div class="flex gap-1 mt-3">
+      ${['canales','reglas-canal','permisos-llm','tags','usuarios'].map((t,i)=>
+        `<button data-tab="${t}" class="admin-tab text-xs px-3 py-1.5 rounded-lg font-medium ${i===0?'bg-slate-900 text-white':'text-slate-600 hover:bg-slate-100'}">${
+          {canales:'Canales','reglas-canal':'Reglas por canal','permisos-llm':'Permisos LLM',tags:'Tags workspace',usuarios:'Usuarios'}[t]
+        }</button>`).join('')}
+    </div>
+  </div>
+
+  <!-- Contenido de cada tab -->
+  <div class="flex-1 overflow-y-auto px-6 py-5">
+
+    <!-- Tab: Canales -->
+    <div id="tab-canales" class="max-w-2xl space-y-4">
+      <p class="text-xs text-slate-500">Canales conectados al workspace. En producción: Gmail API + WhatsApp BSP. En el mockup los mensajes entran desde el simulador de cliente.</p>
+      <div class="space-y-3">
+        ${[
+          {nombre:'WhatsApp Business', estado:'mock', icon:'💬', desc:'Número: +54 9 11 0000-0000 · BSP: pendiente de configurar'},
+          {nombre:'Email (Gmail)', estado:'mock', icon:'✉️', desc:'Cuenta: ventas@empresa.com.ar · OAuth: pendiente'},
+          {nombre:'Instagram DM', estado:'no_conectado', icon:'📷', desc:'Sin cuenta conectada'},
+          {nombre:'Telegram', estado:'no_conectado', icon:'✈️', desc:'Sin bot configurado'},
+        ].map(c=>`
+          <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">${c.icon}</span>
+              <div>
+                <div class="font-semibold">${c.nombre}</div>
+                <div class="text-xs text-slate-500">${c.desc}</div>
+              </div>
+            </div>
+            <span class="text-xs font-medium px-2.5 py-1 rounded-full ${c.estado==='mock'?'bg-amber-100 text-amber-700':c.estado==='conectado'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${
+              {mock:'Mock activo',conectado:'Conectado',no_conectado:'No conectado'}[c.estado]
+            }</span>
+          </div>`).join('')}
+      </div>
+      <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+        <b>wa.me deep link:</b> En lugar de iniciar conversaciones salientes (que requieren templates Meta), publicamos
+        <code>https://wa.me/&lt;nro&gt;?text=Hola</code> en el sitio web y emails. El cliente inicia él la conversación y abrimos la ventana de 24 hs gratis.
+      </div>
+    </div>
+
+    <!-- Tab: Reglas por canal -->
+    <div id="tab-reglas-canal" class="max-w-2xl space-y-4 hidden">
+      <p class="text-xs text-slate-500">El copiloto aplica estas reglas automáticamente al generar sugerencias según el canal de la conversación.</p>
+      <div id="channel-rules-content" class="space-y-4"></div>
+    </div>
+
+    <!-- Tab: Permisos LLM -->
+    <div id="tab-permisos-llm" class="max-w-2xl space-y-4 hidden">
+      <p class="text-xs text-slate-500">Control de qué modelos puede invocar cada rol. Modelos más caros (Opus) requieren aprobación de admin.</p>
+      <div id="llm-perms-content" class="space-y-3"></div>
+    </div>
+
+    <!-- Tab: Tags workspace -->
+    <div id="tab-tags" class="max-w-2xl space-y-4 hidden">
+      <p class="text-xs text-slate-500">Tags disponibles para todos los casos del workspace. Editables por admin.</p>
+      <div id="tags-content" class="space-y-2"></div>
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Agregar nuevo tag</div>
+        <div class="flex gap-2 items-end">
+          <div class="flex-1">
+            <label class="text-xs text-slate-600 block mb-1">Nombre</label>
+            <input id="new-tag-name" placeholder="Ej: Europa 2027" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="text-xs text-slate-600 block mb-1">Color</label>
+            <input id="new-tag-color" type="color" value="#3B82F6" class="h-8 w-12 border border-slate-200 rounded-lg cursor-pointer">
+          </div>
+          <button onclick="createTag()" class="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">Crear</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab: Usuarios -->
+    <div id="tab-usuarios" class="max-w-2xl space-y-3 hidden">
+      <p class="text-xs text-slate-500">Agentes y supervisores del workspace. En producción: SSO Google Workspace + MFA.</p>
+      <div id="users-content" class="space-y-2"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('mas');
+ui.wireHealth();
+
+// Tab switching
+document.querySelectorAll('.admin-tab').forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll('.admin-tab').forEach(b=>{
+      b.className = b===btn
+        ? 'admin-tab text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-900 text-white'
+        : 'admin-tab text-xs px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100';
+    });
+    document.querySelectorAll('[id^="tab-"]').forEach(d=>d.classList.add('hidden'));
+    document.getElementById('tab-'+btn.dataset.tab).classList.remove('hidden');
+  };
+});
+
+let tagsData = [];
+
+async function init(){
+  const [rules, crm] = await Promise.all([api.get('/channel-rules'), api.get('/crm')]);
+  tagsData = crm.tags_workspace || [];
+
+  // Reglas por canal
+  document.getElementById('channel-rules-content').innerHTML = Object.entries(rules).map(([ch, rule])=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <div class="font-semibold capitalize">${ch}</div>
+        <button onclick="saveRule('${ch}')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">Guardar</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        ${Object.entries(rule).map(([k,v])=>`
+          <div>
+            <label class="text-slate-500 block mb-0.5">${k.replace(/_/g,' ')}</label>
+            <input data-channel="${ch}" data-key="${k}" value="${escapeHtml(String(v))}"
+              class="rule-input w-full border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50">
+          </div>`).join('')}
+      </div>
+    </div>`).join('');
+
+  // Permisos LLM
+  document.getElementById('llm-perms-content').innerHTML = (crm.agentes||[]).map(a=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          ${fmt.avatar(a.nombre)}
+          <div>
+            <div class="font-semibold">${a.nombre}</div>
+            <div class="text-xs text-slate-500">${a.rol} · ${a.area}</div>
+          </div>
+        </div>
+        <div class="flex gap-1.5">
+          ${['haiku','sonnet','opus'].map(m=>`
+            <span class="text-xs px-2 py-0.5 rounded-full font-medium ${(a.permisos_modelo||[]).includes(m)?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-400'}">${m}</span>`).join('')}
+        </div>
+      </div>
+      <div class="mt-2 text-xs text-slate-500">Límite diario: <b>${(a.limite_tokens_dia||0).toLocaleString()}</b> tokens</div>
+    </div>`).join('');
+
+  // Tags
+  renderTags();
+
+  // Usuarios
+  document.getElementById('users-content').innerHTML = (crm.agentes||[]).map(a=>`
+    <div class="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        ${fmt.avatar(a.nombre)}
+        <div>
+          <div class="font-medium">${a.nombre}</div>
+          <div class="text-xs text-slate-500">${a.email} · ${a.rol}</div>
+        </div>
+      </div>
+      <span class="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">${a.area}</span>
+    </div>`).join('');
+}
+
+function renderTags(){
+  document.getElementById('tags-content').innerHTML = tagsData.map(t=>`
+    <div class="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center gap-3">
+      <span class="w-4 h-4 rounded-full flex-shrink-0" style="background:${t.color}"></span>
+      <span class="flex-1 font-medium">${escapeHtml(t.nombre)}</span>
+      <span class="text-xs text-slate-400">${t.id}</span>
+    </div>`).join('');
+}
+
+window.saveRule = async function(channel){
+  const inputs = document.querySelectorAll(`.rule-input[data-channel="${channel}"]`);
+  const rule = {};
+  inputs.forEach(i=>{ rule[i.dataset.key] = i.value; });
+  await api.put('/channel-rules/'+channel, {rule});
+  const btn = event.target;
+  btn.textContent='Guardado ✓'; btn.className='text-xs bg-green-600 text-white px-3 py-1 rounded-lg';
+  setTimeout(()=>{ btn.textContent='Guardar'; btn.className='text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700'; },2000);
+};
+
+window.createTag = async function(){
+  const nombre = document.getElementById('new-tag-name').value.trim();
+  const color = document.getElementById('new-tag-color').value;
+  if(!nombre) return;
+  const t = await api.post('/crm/tags', {nombre, color});
+  tagsData.push(t);
+  renderTags();
+  document.getElementById('new-tag-name').value='';
+};
+
+init();
+</script>
+</body></html>

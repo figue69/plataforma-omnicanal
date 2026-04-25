@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, '.'\\); import main; print\\('OK', [r.path for r in main.app.routes if hasattr\\(r,'path'\\)][:30]\\)\")",
+      "Bash(pip3 install *)",
+      "Bash(python3 -c \"import sys; sys.path.insert\\(0, '.'\\); import main; print\\('routes:', len\\(main.app.routes\\)\\)\")",
+      "Bash(python3 -c ' *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "WebSearch",
+      "WebFetch(domain:respond.io)"
+    ]
+  }
+}

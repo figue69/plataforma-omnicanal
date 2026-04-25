@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pipeline · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}
+  .kanban-col{min-height:200px;}
+  .case-card{cursor:grab;transition:box-shadow .15s;}
+  .case-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.1);}
+  .case-card.dragging{opacity:.4;cursor:grabbing;}
+  .col-drop-target{outline:2px dashed #93C5FD;background:#EFF6FF;}
+</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- Header -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div>
+      <h1 class="font-semibold text-slate-900">Pipeline de ventas</h1>
+      <p class="text-xs text-slate-500 mt-0.5">Arrastrá los casos entre etapas para actualizar su estado.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+      <div class="flex gap-2 text-xs">
+        <select id="filter-agent" class="border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
+          <option value="">Todos los agentes</option>
+        </select>
+        <select id="filter-type" class="border border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none">
+          <option value="">Agencias + Pasajeros</option>
+          <option value="agencia">Solo agencias</option>
+          <option value="pasajero">Solo pasajeros</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kanban -->
+  <div class="flex-1 overflow-x-auto overflow-y-hidden">
+    <div id="board" class="flex gap-3 h-full px-5 py-4 min-w-max"></div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('pipeline');
+ui.wireHealth();
+
+const STAGES = [
+  {id:'consulta',       label:'Consulta',          color:'slate'},
+  {id:'cotizacion',     label:'Cotización',         color:'blue'},
+  {id:'reserva_tentativa', label:'Reserva tentativa', color:'amber'},
+  {id:'sena',           label:'Seña',               color:'orange'},
+  {id:'pago_total',     label:'Pago total',         color:'green'},
+  {id:'documentacion',  label:'Documentación',      color:'purple'},
+  {id:'pre_viaje',      label:'Pre-viaje',          color:'indigo'},
+];
+
+const STAGE_COLORS = {
+  slate:'border-slate-300 bg-slate-50',
+  blue:'border-blue-300 bg-blue-50',
+  amber:'border-amber-300 bg-amber-50',
+  orange:'border-orange-300 bg-orange-50',
+  green:'border-green-300 bg-green-50',
+  purple:'border-purple-300 bg-purple-50',
+  indigo:'border-indigo-300 bg-indigo-50',
+};
+const HEADER_COLORS = {
+  slate:'bg-slate-200 text-slate-700',
+  blue:'bg-blue-200 text-blue-800',
+  amber:'bg-amber-200 text-amber-800',
+  orange:'bg-orange-200 text-orange-800',
+  green:'bg-green-200 text-green-800',
+  purple:'bg-purple-200 text-purple-800',
+  indigo:'bg-indigo-200 text-indigo-800',
+};
+
+let inbox = [], contacts = [], allTags = [];
+let draggingId = null;
+
+async function init(){
+  [inbox, {agencias, pasajeros, tags_workspace}] = await Promise.all([
+    api.get('/inbox'),
+    api.get('/crm'),
+  ]);
+  contacts = [...(agencias||[]), ...(pasajeros||[])];
+  allTags = tags_workspace || [];
+
+  // Cargar agentes para el filtro
+  const agents = await api.get('/crm/agents');
+  document.getElementById('filter-agent').innerHTML =
+    '<option value="">Todos los agentes</option>' +
+    agents.map(a=>`<option value="${a.id}">${a.nombre}</option>`).join('');
+
+  render();
+}
+
+function filtered(){
+  const ag = document.getElementById('filter-agent').value;
+  const tp = document.getElementById('filter-type').value;
+  return inbox.filter(r=>{
+    if(ag && r.case.assigned_agent !== ag) return false;
+    if(tp && r.case.contact_type !== tp) return false;
+    return true;
+  });
+}
+
+function render(){
+  const data = filtered();
+  const tagMap = Object.fromEntries(allTags.map(t=>[t.id,t]));
+  const contactMap = Object.fromEntries(contacts.map(c=>[c.id,c]));
+  const byStage = Object.fromEntries(STAGES.map(s=>[s.id, data.filter(r=>r.case.stage===s.id)]));
+
+  document.getElementById('board').innerHTML = STAGES.map(s=>{
+    const cards = byStage[s.id]||[];
+    const totalUSD = cards.reduce((sum,r)=>{
+      const ex = r.case.extracted_data||{};
+      return sum + (ex.pax||1)*800; // estimado mock
+    },0);
+
+    return `<div class="flex flex-col w-60 flex-shrink-0" data-stage="${s.id}">
+      <!-- Columna header -->
+      <div class="rounded-t-xl px-3 py-2 ${HEADER_COLORS[s.color]} flex items-center justify-between mb-1">
+        <span class="font-semibold text-xs uppercase tracking-wide">${s.label}</span>
+        <span class="text-xs opacity-70">${cards.length} · ~USD ${totalUSD.toLocaleString()}</span>
+      </div>
+      <!-- Drop zone -->
+      <div class="kanban-col flex-1 rounded-b-xl border-2 ${STAGE_COLORS[s.color]} p-2 space-y-2 overflow-y-auto"
+        data-stage="${s.id}"
+        ondragover="onDragOver(event)"
+        ondragleave="onDragLeave(event)"
+        ondrop="onDrop(event,'${s.id}')">
+        ${cards.map(r=>{
+          const c = r.case;
+          const contact = contactMap[c.contact_id]||{};
+          const caseTags = (c.tags||[]).map(tid=>tagMap[tid]).filter(Boolean);
+          return `<div class="case-card bg-white rounded-xl border border-slate-200 p-3 shadow-sm"
+              draggable="true"
+              data-id="${c.id}"
+              ondragstart="onDragStart(event,'${c.id}')"
+              ondragend="onDragEnd(event)"
+              onclick="location.href='03-caso-detalle.html?id=${c.id}'">
+            <div class="flex items-start justify-between gap-1 mb-1.5">
+              <div class="font-medium text-xs text-slate-900 leading-snug">${c.titulo||c.id}</div>
+              ${fmt.urgencyBadge(c.urgency)}
+            </div>
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 mb-2">
+              ${fmt.avatar(contact.nombre||'?').replace('w-9 h-9','w-5 h-5 text-[9px]')}
+              <span class="truncate">${contact.nombre||c.contact_id}</span>
+            </div>
+            ${c.extracted_data?.pax ? `<div class="text-[11px] text-slate-500">👥 ${c.extracted_data.pax} pax · ${c.extracted_data.destinos?.[0]||''} · ${c.extracted_data.fecha_aprox||''}</div>` : ''}
+            ${caseTags.length ? `<div class="flex flex-wrap gap-1 mt-2">${caseTags.map(t=>`<span class="text-[9px] text-white px-1.5 py-0.5 rounded-full font-medium" style="background:${t.color}">${t.nombre}</span>`).join('')}</div>` : ''}
+            <div class="text-[10px] text-slate-400 mt-2">${fmt.date(r.last_message?.ts||c.updated_at)}</div>
+          </div>`;
+        }).join('') || `<div class="text-[11px] text-slate-400 italic text-center py-4">Sin casos</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Drag & drop
+function onDragStart(e, id){
+  draggingId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.classList.add('dragging');
+}
+function onDragEnd(e){ e.currentTarget.classList.remove('dragging'); }
+function onDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('col-drop-target');
+}
+function onDragLeave(e){ e.currentTarget.classList.remove('col-drop-target'); }
+
+async function onDrop(e, newStage){
+  e.preventDefault();
+  e.currentTarget.classList.remove('col-drop-target');
+  if(!draggingId) return;
+  // Actualizar en storage local (el backend no tiene endpoint de stage en el mockup,
+  // así que lo hacemos optimistic y actualizamos el objeto local)
+  const item = inbox.find(r=>r.case.id===draggingId);
+  if(item && item.case.stage !== newStage){
+    item.case.stage = newStage;
+    item.case.updated_at = new Date().toISOString();
+    // Intentar persistir vía reply/update si hubiera endpoint; por ahora optimistic UI
+    try {
+      await fetch(`${API}/cases/${draggingId}/stage`, {
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({stage: newStage}),
+      });
+    } catch(err){ /* endpoint opcional en el mockup */ }
+    render();
+  }
+  draggingId = null;
+}
+
+document.getElementById('filter-agent').onchange = render;
+document.getElementById('filter-type').onchange = render;
+
+init();
+</script>
+</body></html>

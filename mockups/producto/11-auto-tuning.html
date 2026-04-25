@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto-tuning · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}
+  .diff-add{background:#DCFCE7;color:#166534;}
+  .diff-remove{background:#FEE2E2;color:#991B1B;text-decoration:line-through;}
+</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 overflow-y-auto">
+  <div class="max-w-4xl mx-auto px-6 py-5 space-y-5">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-semibold text-slate-900">Auto-tuning de prompts</h1>
+        <p class="text-xs text-slate-500 mt-0.5">
+          El copiloto analiza las ediciones del agente y propone mejoras a los system prompts.
+          <b>Siempre con humano en el loop</b> — ningún cambio se aplica sin aprobación.
+        </p>
+      </div>
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+    </div>
+
+    <!-- Generar nueva revisión -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Generar nueva revisión</div>
+      <div class="flex gap-3 items-end">
+        <div class="flex-1">
+          <label class="text-xs text-slate-600 block mb-1">Tipo</label>
+          <select id="gen-type" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <option value="agente">Agente</option>
+            <option value="cliente">Cliente (agencia/pasajero)</option>
+          </select>
+        </div>
+        <div class="flex-1" id="gen-target-wrap">
+          <label class="text-xs text-slate-600 block mb-1">Agente</label>
+          <select id="gen-target" class="w-full border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"></select>
+        </div>
+        <button id="btn-generate" class="bg-slate-900 hover:bg-slate-700 text-white px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Analizar
+        </button>
+      </div>
+    </div>
+
+    <!-- Cola de revisiones pendientes -->
+    <div>
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-2">Cola de revisiones pendientes</div>
+      <div id="reviews-list" class="space-y-3"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('mas');
+ui.wireHealth();
+
+let reviews = [], agents = [], contacts = [];
+
+async function init(){
+  [reviews, {agencias, pasajeros}] = await Promise.all([
+    api.get('/tuning-reviews'),
+    api.get('/crm'),
+  ]);
+  agents = (await api.get('/crm/agents')) || [];
+  contacts = [...(agencias||[]), ...(pasajeros||[])];
+  populateTargetSelector();
+  renderReviews();
+}
+
+function populateTargetSelector(){
+  const tipo = document.getElementById('gen-type').value;
+  const list = tipo === 'agente' ? agents : contacts;
+  document.getElementById('gen-target').innerHTML = list.map(x=>`<option value="${x.id}">${x.nombre}</option>`).join('');
+}
+
+document.getElementById('gen-type').onchange = populateTargetSelector;
+
+document.getElementById('btn-generate').onclick = async ()=>{
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg> Analizando…`;
+  try {
+    const r = await api.post('/tuning-reviews/generate', {
+      target_type: document.getElementById('gen-type').value,
+      target_id: document.getElementById('gen-target').value,
+    });
+    reviews.unshift(r);
+    renderReviews();
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Analizar`;
+  }
+};
+
+function renderReviews(){
+  const pending = reviews.filter(r=>r.status==='pendiente');
+  const resolved = reviews.filter(r=>r.status==='resuelto');
+
+  document.getElementById('reviews-list').innerHTML = (!pending.length && !resolved.length)
+    ? '<div class="text-xs text-slate-400 italic">Sin revisiones. Generá una con el botón de arriba.</div>'
+    : [...pending.map(r=>reviewCard(r, false)), ...resolved.map(r=>reviewCard(r, true))].join('');
+}
+
+function reviewCard(r, resolved){
+  const diffHtml = (r.diff_summary||[]).map(d=>`<li>${escapeHtml(d)}</li>`).join('') || '<li class="text-slate-400 italic">Sin cambios propuestos.</li>';
+  const hasChange = r.proposed_prompt !== r.current_prompt;
+
+  return `<div class="bg-white rounded-xl border ${resolved?'border-slate-100 opacity-70':'border-slate-200'} overflow-hidden">
+    <!-- Cabecera -->
+    <div class="flex items-start justify-between px-4 py-3 border-b border-slate-100">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-slate-900">${escapeHtml(r.target_name||r.target_id)}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${r.target_type==='agente'?'bg-blue-100 text-blue-700':'bg-purple-100 text-purple-700'}">${r.target_type}</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${resolved?'bg-slate-100 text-slate-500':'bg-amber-100 text-amber-700'}">${resolved?r.decision||'resuelto':'pendiente'}</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-0.5">${fmt.date(r.created_at)} · ID: ${r.id}</div>
+      </div>
+    </div>
+
+    <!-- Justificación -->
+    <div class="px-4 py-3 border-b border-slate-100">
+      <div class="text-xs font-semibold text-slate-500 mb-1">Justificación del copiloto</div>
+      <p class="text-sm text-slate-700">${escapeHtml(r.justification||'—')}</p>
+      ${(r.evidence||[]).length ? `<div class="mt-2 space-y-1">${r.evidence.map(e=>`<div class="text-xs bg-slate-50 border border-slate-100 rounded-lg px-3 py-1.5"><span class="text-slate-400">${e.message_id||''}</span> ${escapeHtml(e.snippet||'')}</div>`).join('')}</div>` : ''}
+    </div>
+
+    <!-- Cambios propuestos -->
+    <div class="px-4 py-3 border-b border-slate-100">
+      <div class="text-xs font-semibold text-slate-500 mb-2">Cambios propuestos</div>
+      <ul class="list-disc list-inside space-y-1 text-xs text-slate-700">${diffHtml}</ul>
+    </div>
+
+    <!-- Diff de prompt -->
+    ${hasChange ? `<div class="px-4 py-3 border-b border-slate-100">
+      <div class="text-xs font-semibold text-slate-500 mb-2">Prompt actual → propuesto</div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <div class="text-[10px] text-slate-400 mb-1">Actual</div>
+          <pre class="text-[11px] bg-red-50 border border-red-100 rounded-lg p-2 whitespace-pre-wrap overflow-x-auto text-slate-700">${escapeHtml(r.current_prompt||'(vacío)')}</pre>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400 mb-1">Propuesto</div>
+          <textarea id="edit-${r.id}" rows="6"
+            class="w-full text-[11px] bg-green-50 border border-green-200 rounded-lg p-2 font-mono focus:outline-none focus:ring-2 focus:ring-green-400 resize-none"
+            ${resolved?'disabled':''}>${escapeHtml(r.proposed_prompt||'')}</textarea>
+        </div>
+      </div>
+    </div>` : `<div class="px-4 py-3 border-b border-slate-100 text-xs text-slate-400 italic">El copiloto no propone cambios en este ciclo.</div>`}
+
+    <!-- Acciones -->
+    ${!resolved ? `<div class="px-4 py-3 flex items-center gap-2">
+      <button onclick="decide('${r.id}','approved')" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">✓ Aprobar</button>
+      <button onclick="decide('${r.id}','edited')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">✎ Aprobar con ediciones</button>
+      <button onclick="decide('${r.id}','rejected')" class="border border-slate-300 text-slate-600 hover:bg-slate-50 px-3 py-1.5 rounded-lg text-xs font-semibold">✕ Rechazar</button>
+      <span class="text-xs text-slate-400 ml-auto">Decidido por: ${session.agentName}</span>
+    </div>` : `<div class="px-4 py-3 text-xs text-slate-400">Decidido por <b>${r.decided_by||'—'}</b> el ${fmt.date(r.decided_at)}</div>`}
+  </div>`;
+}
+
+window.decide = async function(reviewId, decision){
+  const editedPrompt = document.getElementById('edit-'+reviewId)?.value;
+  const r = await api.post(`/tuning-reviews/${reviewId}/decide`, {
+    decision,
+    decided_by: session.agentName,
+    edited_prompt: decision==='edited' ? editedPrompt : null,
+  });
+  // Actualizar en lista local
+  const idx = reviews.findIndex(x=>x.id===reviewId);
+  if(idx>=0) reviews[idx] = {...reviews[idx], ...r};
+  renderReviews();
+};
+
+init();
+</script>
+</body></html>

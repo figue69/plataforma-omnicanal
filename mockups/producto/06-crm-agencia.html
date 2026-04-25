@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CRM Agencias · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<!-- Lista de agencias -->
+<div class="w-72 bg-white border-r border-slate-200 flex flex-col h-screen flex-shrink-0">
+  <div class="px-4 pt-4 pb-3 border-b border-slate-100">
+    <h1 class="font-semibold text-slate-900 mb-2">CRM · Agencias</h1>
+    <input id="search-ag" placeholder="Buscar agencia…" class="w-full bg-slate-100 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+  </div>
+  <div id="agency-list" class="flex-1 overflow-y-auto divide-y divide-slate-100"></div>
+  <div class="p-3 border-t border-slate-100">
+    <a href="06b-crm-pasajero.html" class="block text-center text-xs text-blue-600 hover:underline">Ver Pasajeros →</a>
+  </div>
+</div>
+
+<!-- Detalle agencia -->
+<div class="flex-1 overflow-y-auto">
+  <div id="detail" class="flex items-center justify-center h-full text-slate-400 text-sm">
+    <div class="text-center">
+      <svg class="w-10 h-10 mx-auto mb-2 text-slate-200" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+      Seleccioná una agencia
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('crm');
+ui.wireHealth('health-dummy');
+
+let agencies = [], allCases = [], allTags = [];
+let activeId = null;
+
+async function init(){
+  const crm = await api.get('/crm');
+  agencies = crm.agencias || [];
+  allTags = crm.tags_workspace || [];
+  const inbox = await api.get('/inbox');
+  allCases = inbox;
+  renderList();
+}
+
+function renderList(){
+  const q = document.getElementById('search-ag').value.toLowerCase();
+  const filtered = agencies.filter(a => !q || a.nombre.toLowerCase().includes(q));
+  document.getElementById('agency-list').innerHTML = filtered.map(a => `
+    <div class="px-4 py-3 cursor-pointer hover:bg-slate-50 ${activeId===a.id?'bg-blue-50':''}" onclick="openAgency('${a.id}')">
+      <div class="flex items-center gap-2.5">
+        ${fmt.avatar(a.nombre)}
+        <div class="min-w-0">
+          <div class="font-medium text-slate-900 truncate">${a.nombre}</div>
+          <div class="text-xs text-slate-500">${a.ubicacion||''} · ${a.datos_comerciales_informativos?.categoria||''}</div>
+        </div>
+      </div>
+    </div>
+  `).join('') || '<div class="p-4 text-xs text-slate-400 italic">Sin resultados.</div>';
+}
+
+function openAgency(id){
+  activeId = id;
+  renderList();
+  const a = agencies.find(x=>x.id===id);
+  if(!a) return;
+  const casos = allCases.filter(r=>r.case.contact_id===id);
+  const tagMap = Object.fromEntries(allTags.map(t=>[t.id,t]));
+
+  document.getElementById('detail').innerHTML = `
+  <div class="max-w-3xl mx-auto p-6 space-y-5">
+
+    <!-- Header -->
+    <div class="flex items-start justify-between">
+      <div class="flex gap-4 items-center">
+        ${fmt.avatar(a.nombre)}
+        <div>
+          <h2 class="text-xl font-semibold text-slate-900">${a.nombre}</h2>
+          <div class="text-sm text-slate-500">${a.ubicacion||''}</div>
+        </div>
+      </div>
+      <span class="text-xs font-semibold px-3 py-1 rounded-full ${a.datos_comerciales_informativos?.categoria==='PREMIUM'?'bg-amber-100 text-amber-700':'bg-slate-100 text-slate-600'}">
+        ${a.datos_comerciales_informativos?.categoria||'STANDARD'}
+      </span>
+    </div>
+
+    <!-- Métricas rápidas -->
+    <div class="grid grid-cols-3 gap-3">
+      <div class="bg-white rounded-xl border border-slate-200 p-3 text-center">
+        <div class="text-xl font-bold text-slate-900">${a.tasa_conversion_pct||0}%</div>
+        <div class="text-xs text-slate-500 mt-0.5">Tasa de conversión</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-3 text-center">
+        <div class="text-xl font-bold text-slate-900">USD ${(a.ticket_promedio_usd||0).toLocaleString()}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Ticket promedio</div>
+      </div>
+      <div class="bg-white rounded-xl border border-slate-200 p-3 text-center">
+        <div class="text-xl font-bold text-slate-900">${casos.length}</div>
+        <div class="text-xs text-slate-500 mt-0.5">Casos abiertos</div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+
+      <!-- Datos comerciales (read-only) -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Datos comerciales
+          <span class="normal-case font-normal text-slate-400 ml-1">(solo lectura · portal externo)</span>
+        </div>
+        <div class="space-y-2 text-sm">
+          ${Object.entries(a.datos_comerciales_informativos||{}).map(([k,v])=>`
+            <div class="flex justify-between">
+              <span class="text-slate-500">${k.replace(/_/g,' ')}</span>
+              <span class="font-medium">${v}</span>
+            </div>`).join('')}
+          <div class="flex justify-between">
+            <span class="text-slate-500">Consentimiento WA</span>
+            <span class="font-medium ${a.consentimiento_whatsapp?'text-green-600':'text-red-500'}">${a.consentimiento_whatsapp?'✓ '+a.consentimiento_fecha:'No'}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Vendedores -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Vendedores</div>
+        <div class="space-y-3">
+          ${(a.vendedores||[]).map(v=>`
+            <div class="flex items-center gap-2.5">
+              ${fmt.avatar(v.nombre)}
+              <div>
+                <div class="font-medium text-sm">${v.nombre}</div>
+                <div class="text-xs text-slate-500">${v.email}</div>
+                <div class="text-xs text-slate-500">${v.whatsapp||''}</div>
+              </div>
+            </div>`).join('') || '<div class="text-xs text-slate-400 italic">Sin vendedores registrados.</div>'}
+        </div>
+      </div>
+    </div>
+
+    <!-- System prompt del cliente -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs font-semibold text-slate-500 uppercase">System prompt del cliente
+          <span class="normal-case font-normal text-slate-400 ml-1">— lo usa el copiloto al sugerir respuestas</span>
+        </div>
+        <button onclick="savePrompt('${a.id}')" class="text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700">Guardar</button>
+      </div>
+      <textarea id="prompt-${a.id}" rows="4"
+        class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none">${escapeHtml(a.system_prompt||'')}</textarea>
+    </div>
+
+    <!-- Casos activos -->
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div class="text-xs font-semibold text-slate-500 uppercase mb-3">Casos activos</div>
+      ${casos.length ? casos.map(r=>{
+        const c = r.case;
+        const caseTags = (c.tags||[]).map(tid=>tagMap[tid]).filter(Boolean);
+        return `<a href="03-caso-detalle.html?id=${c.id}" class="flex items-center justify-between py-2 border-b border-slate-100 last:border-0 hover:bg-slate-50 -mx-1 px-1 rounded-lg">
+          <div>
+            <div class="font-medium text-sm">${c.titulo}</div>
+            <div class="flex gap-1.5 mt-1 flex-wrap">
+              ${fmt.stageBadge(c.stage)}
+              ${fmt.urgencyBadge(c.urgency)}
+              ${caseTags.map(t=>`<span class="text-[10px] text-white px-1.5 py-0.5 rounded-full font-medium" style="background:${t.color}">${t.nombre}</span>`).join('')}
+            </div>
+          </div>
+          <span class="text-xs text-slate-400">${fmt.date(c.updated_at)}</span>
+        </a>`;
+      }).join('') : '<div class="text-xs text-slate-400 italic">Sin casos activos.</div>'}
+    </div>
+
+  </div>`;
+}
+
+window.savePrompt = async function(id){
+  const val = document.getElementById('prompt-'+id)?.value;
+  if(val===undefined) return;
+  await api.put('/crm/contacts/'+id+'/system_prompt', {system_prompt: val});
+  const a = agencies.find(x=>x.id===id);
+  if(a) a.system_prompt = val;
+  // Feedback visual
+  const btn = event.target;
+  btn.textContent='Guardado ✓'; btn.className='text-xs bg-green-600 text-white px-3 py-1 rounded-lg';
+  setTimeout(()=>{ btn.textContent='Guardar'; btn.className='text-xs bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700'; },2000);
+};
+
+document.getElementById('search-ag').oninput = renderList;
+init();
+</script>
+</body></html>

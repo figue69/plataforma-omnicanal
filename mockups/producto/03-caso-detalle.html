@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Caso · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;overflow:hidden;}
+  .bubble-in{background:#F1F5F9;color:#0f172a;border-radius:0 12px 12px 12px;}
+  .bubble-out{background:#2563EB;color:#fff;border-radius:12px 0 12px 12px;}
+  .suggestion-card{transition:border-color .15s,box-shadow .15s;}
+  .suggestion-card:hover{border-color:#3B82F6;box-shadow:0 0 0 2px #BFDBFE;}
+  #timeline::-webkit-scrollbar{width:4px;}
+  #timeline::-webkit-scrollbar-thumb{background:#CBD5E1;border-radius:4px;}
+</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm" style="overflow:hidden;">
+
+<!-- Sidebar (solo si se abre directo, no dentro del iframe del inbox) -->
+<div id="sidebar-wrap"></div>
+
+<!-- Chat principal -->
+<div class="flex flex-col flex-1 min-w-0 bg-white border-r border-slate-200">
+
+  <!-- Header del caso -->
+  <div class="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 bg-white flex-shrink-0">
+    <div class="flex items-center gap-3 min-w-0">
+      <button onclick="history.back()" class="text-slate-400 hover:text-slate-700 lg:hidden">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      </button>
+      <div id="case-avatar"></div>
+      <div class="min-w-0">
+        <div id="case-name" class="font-semibold text-slate-900 truncate">—</div>
+        <div id="case-meta" class="flex items-center gap-2 text-xs text-slate-500 flex-wrap"></div>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      <div id="case-badges" class="flex gap-1.5"></div>
+      <button id="btn-close-case" class="text-xs border border-slate-300 px-2.5 py-1 rounded-lg hover:bg-slate-50 text-slate-600">Cerrar caso</button>
+    </div>
+  </div>
+
+  <!-- Timeline de mensajes -->
+  <div id="timeline" class="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50"></div>
+
+  <!-- Composer -->
+  <div class="border-t border-slate-200 bg-white px-4 py-3 flex-shrink-0">
+    <!-- Tabs: Responder / Nota interna -->
+    <div class="flex gap-3 mb-2">
+      <button data-tab="reply" class="tab-btn text-xs font-semibold border-b-2 border-blue-600 text-blue-600 pb-1">Responder</button>
+      <button data-tab="note" class="tab-btn text-xs font-semibold border-b-2 border-transparent text-slate-500 pb-1">Nota interna</button>
+    </div>
+    <div id="composer-hint" class="text-[11px] text-slate-400 mb-1"></div>
+    <textarea id="reply-body" rows="3"
+      class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white placeholder-slate-400"
+      placeholder="Escribí la respuesta o elegí una sugerencia del panel derecho…"></textarea>
+    <div class="flex items-center justify-between mt-2">
+      <div class="flex items-center gap-2">
+        <span id="channel-indicator" class="text-xs text-slate-500"></span>
+        <span id="suggestion-used" class="text-xs text-slate-400 italic"></span>
+      </div>
+      <button id="btn-send"
+        class="bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+        Enviar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Panel derecho: IA + Ficha -->
+<div class="w-80 bg-white border-l border-slate-200 flex flex-col h-screen flex-shrink-0 overflow-hidden">
+  <!-- Tabs del panel -->
+  <div class="flex border-b border-slate-200 px-4 pt-3">
+    <button data-panel="ai" class="panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-blue-600 text-blue-600">Copiloto IA</button>
+    <button data-panel="ficha" class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-transparent text-slate-500">Ficha</button>
+    <button data-panel="datos" class="panel-tab text-xs font-semibold pb-2.5 ml-4 border-b-2 border-transparent text-slate-500">Datos</button>
+  </div>
+
+  <!-- Panel IA -->
+  <div id="panel-ai" class="flex-1 overflow-y-auto p-3 space-y-2">
+    <!-- Instrucción libre -->
+    <div class="bg-slate-50 rounded-xl p-3 border border-slate-200">
+      <div class="text-xs font-semibold text-slate-600 mb-1.5">Pedirle a la IA…</div>
+      <div class="flex gap-1.5">
+        <input id="custom-instruction" placeholder="más cálido, agrega precio, en inglés…"
+          class="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        <button id="btn-custom" class="bg-slate-900 text-white px-2.5 py-1 rounded-lg text-xs font-semibold hover:bg-slate-700 flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Pedir
+        </button>
+      </div>
+    </div>
+
+    <!-- Sugerencias -->
+    <div id="suggestions-container">
+      <div class="text-xs text-slate-400 italic text-center py-6">
+        Sin sugerencias aún. Llegará un mensaje del cliente para generarlas.
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Ficha -->
+  <div id="panel-ficha" class="flex-1 overflow-y-auto p-3 hidden">
+    <div id="ficha-content" class="space-y-3"></div>
+
+    <!-- Tags del caso -->
+    <div class="mt-3 border-t border-slate-100 pt-3">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-semibold text-slate-600">Tags del caso</span>
+        <button id="btn-show-tag-picker" class="text-xs text-blue-600 hover:underline">+ Agregar</button>
+      </div>
+      <!-- Tags activos -->
+      <div id="active-tags" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
+      <!-- Selector de tags (oculto por defecto) -->
+      <div id="tag-picker" class="hidden mt-2 border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden">
+        <div class="px-3 py-2 border-b border-slate-100">
+          <input id="tag-search" placeholder="Buscar tag…" class="w-full text-xs focus:outline-none placeholder-slate-400" />
+        </div>
+        <div id="tag-picker-list" class="max-h-48 overflow-y-auto py-1"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel Datos extraídos -->
+  <div id="panel-datos" class="flex-1 overflow-y-auto p-3 hidden">
+    <div class="text-xs font-semibold text-slate-600 mb-2">Datos extraídos del último mensaje</div>
+    <pre id="extracted-data" class="text-[11px] bg-slate-50 rounded-xl p-3 border border-slate-100 overflow-x-auto text-slate-700">—</pre>
+    <div class="text-xs font-semibold text-slate-600 mt-3 mb-2">Fuentes consultadas</div>
+    <div id="sources-badges" class="flex flex-wrap gap-1"></div>
+  </div>
+</div>
+
+<script>
+// ── Si se abre directamente (no en iframe), mostrar sidebar
+const inIframe = window.self !== window.top;
+if(!inIframe) document.getElementById('sidebar-wrap').innerHTML = ui.sidebar('inbox');
+
+const caseId = new URLSearchParams(location.search).get('id') || session.lastCaseId;
+let detail = null;
+let chosenLabel = null;
+let isEdited = false;
+let activeTab = 'reply';
+
+// ── Panel tabs
+document.querySelectorAll('.panel-tab').forEach(b=>{
+  b.onclick=()=>{
+    const p = b.dataset.panel;
+    document.querySelectorAll('.panel-tab').forEach(x=>{
+      const active = x.dataset.panel===p;
+      x.className = active
+        ? 'panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-blue-600 text-blue-600'
+        : 'panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-transparent text-slate-500';
+    });
+    ['ai','ficha','datos'].forEach(n=>{
+      document.getElementById('panel-'+n).classList.toggle('hidden', n!==p);
+    });
+  };
+});
+
+// ── Composer tabs
+document.querySelectorAll('.tab-btn').forEach(b=>{
+  b.onclick=()=>{
+    activeTab = b.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(x=>{
+      const a = x.dataset.tab===activeTab;
+      x.className = `tab-btn text-xs font-semibold border-b-2 pb-1 ${a?'border-blue-600 text-blue-600':'border-transparent text-slate-500'}`;
+    });
+    const ta = document.getElementById('reply-body');
+    if(activeTab==='note'){
+      ta.placeholder='Nota interna (solo visible para el equipo, no se envía al cliente)…';
+      ta.className = ta.className.replace('border-slate-200','border-amber-300').replace('focus:ring-blue-500','focus:ring-amber-400');
+      document.getElementById('btn-send').textContent='Guardar nota';
+    } else {
+      ta.placeholder='Escribí la respuesta o elegí una sugerencia del panel derecho…';
+      ta.className = ta.className.replace('border-amber-300','border-slate-200').replace('focus:ring-amber-400','focus:ring-blue-500');
+      document.getElementById('btn-send').innerHTML=`<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg> Enviar`;
+    }
+  };
+});
+
+async function load(){
+  if(!caseId){ document.getElementById('case-name').textContent = 'Sin caso seleccionado'; return; }
+  try {
+    detail = await api.get('/cases/'+caseId);
+    if(inIframe) session.lastCaseId = caseId;
+    await api.post('/cases/'+caseId+'/mark_read');
+    render();
+  } catch(e){ console.error(e); }
+}
+
+function render(){
+  if(!detail) return;
+  const c = detail.case;
+  const contact = detail.contact||{};
+
+  // Header
+  document.getElementById('case-avatar').innerHTML = fmt.avatar(contact.nombre||c.titulo);
+  document.getElementById('case-name').textContent = contact.nombre||c.titulo||c.id;
+  document.getElementById('case-meta').innerHTML = `
+    <span>${fmt.channelIcon(detail.messages.slice(-1)[0]?.channel||'whatsapp')} ${fmt.channelLabel(detail.messages.slice(-1)[0]?.channel||'')}</span>
+    <span class="text-slate-300">·</span>
+    <span>${c.contact_type==='agencia'?'Agencia':'Pasajero'}</span>
+    <span class="text-slate-300">·</span>
+    <span>Asignado: ${c.assigned_agent}</span>
+  `;
+  document.getElementById('case-badges').innerHTML =
+    fmt.stageBadge(c.stage) + ' ' + fmt.urgencyBadge(c.urgency);
+
+  // Urgencia: banner si es crítico
+  const lastIn = [...detail.messages].reverse().find(m=>m.direction==='in');
+  if(lastIn?.classification?.severity==='critica' && !document.getElementById('urgency-banner')){
+    const banner = document.createElement('div');
+    banner.id='urgency-banner';
+    banner.className='bg-red-600 text-white text-xs font-semibold px-4 py-2 flex items-center gap-2';
+    banner.innerHTML='⚠ Urgencia crítica detectada — Escalamiento activo (simulado)';
+    document.getElementById('timeline').parentNode.insertBefore(banner, document.getElementById('timeline'));
+  }
+
+  // Timeline
+  const tl = document.getElementById('timeline');
+  if(!detail.messages.length){
+    tl.innerHTML='<div class="text-xs text-slate-400 italic text-center py-8">Sin mensajes aún.</div>';
+  } else {
+    tl.innerHTML = detail.messages.map(m=>{
+      const isIn = m.direction==='in';
+      return `<div class="flex ${isIn?'justify-start':'justify-end'}">
+        <div class="max-w-[78%]">
+          <div class="text-[10px] text-slate-400 mb-1 ${isIn?'':'text-right'}">
+            ${isIn?'Cliente':'Agente '+m.agent_id||''} · ${fmt.channelLabel(m.channel)} · ${fmt.date(m.ts)}
+          </div>
+          <div class="${isIn?'bubble-in':'bubble-out'} px-3.5 py-2.5 text-sm whitespace-pre-wrap shadow-sm">${escapeHtml(m.text||'')}</div>
+          ${m.based_on_suggestion_label?`<div class="text-[10px] text-slate-400 mt-1 ${isIn?'':'text-right'}">IA: "${m.based_on_suggestion_label}"${m.edited_from_ai?' (editada)':''}</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+    tl.scrollTop = tl.scrollHeight;
+  }
+
+  // Sugerencias
+  renderSuggestions(detail.suggestions||[]);
+
+  // Channel indicator en el composer
+  if(lastIn) document.getElementById('channel-indicator').innerHTML =
+    `Enviando por ${fmt.channelIcon(lastIn.channel)} ${fmt.channelLabel(lastIn.channel)}`;
+
+  // Ficha
+  document.getElementById('ficha-content').innerHTML = `
+    <div class="flex gap-3 items-start">
+      ${fmt.avatar(contact.nombre||'?')}
+      <div>
+        <div class="font-semibold text-slate-900">${contact.nombre||'—'}</div>
+        <div class="text-xs text-slate-500">${contact.tipo||''}</div>
+        ${contact.email?`<div class="text-xs text-slate-500">${contact.email}</div>`:''}
+        ${contact.whatsapp?`<div class="text-xs text-slate-500">${contact.whatsapp}</div>`:''}
+      </div>
+    </div>
+    ${contact.system_prompt?`<div class="bg-blue-50 rounded-xl p-3 text-xs text-slate-600 border border-blue-100 italic">"${escapeHtml(contact.system_prompt)}"</div>`:''}
+    <div class="border rounded-xl divide-y text-xs">
+      <div class="flex justify-between px-3 py-2"><span class="text-slate-500">Caso</span><span class="font-medium">${c.id}</span></div>
+      <div class="flex justify-between px-3 py-2"><span class="text-slate-500">Destino</span><span class="font-medium">${c.destino_principal||'—'}</span></div>
+      <div class="flex justify-between px-3 py-2"><span class="text-slate-500">Etapa</span><span>${fmt.stageBadge(c.stage)}</span></div>
+      <div class="flex justify-between px-3 py-2"><span class="text-slate-500">Mensajes</span><span class="font-medium">${detail.messages.length}</span></div>
+    </div>
+    ${contact.datos_comerciales_informativos?`
+    <div class="bg-slate-50 rounded-xl p-3 border border-slate-100 text-xs space-y-1">
+      <div class="font-semibold text-slate-600 mb-1">Datos comerciales (solo lectura)</div>
+      ${Object.entries(contact.datos_comerciales_informativos).map(([k,v])=>`<div class="flex justify-between"><span class="text-slate-500">${k}</span><span>${v}</span></div>`).join('')}
+    </div>`:''} `;
+
+  // Datos extraídos
+  const extracted = lastIn?.extracted;
+  document.getElementById('extracted-data').textContent = extracted ? JSON.stringify(extracted,null,2) : '—';
+  const sources = (detail.suggestions?.[0]?.sources)||[];
+  document.getElementById('sources-badges').innerHTML = sources.map(s=>
+    `<span class="text-[10px] bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">${s}</span>`
+  ).join('') || '<span class="text-xs text-slate-400 italic">—</span>';
+}
+
+function renderSuggestions(sugs){
+  document.getElementById('suggestions-container').innerHTML = sugs.length
+    ? sugs.map((s,i)=>`
+      <div class="suggestion-card border border-slate-200 rounded-xl p-3 cursor-pointer bg-white" onclick="useSuggestion(${i})">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">${escapeHtml(s.label)}</span>
+          <span class="text-[10px] text-blue-500 font-medium">Usar →</span>
+        </div>
+        <div class="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">${escapeHtml(s.body)}</div>
+        ${s.rationale?`<div class="text-[10px] text-slate-400 italic mt-2 border-t border-slate-100 pt-2">${escapeHtml(s.rationale)}</div>`:''}
+        ${(s.sources||[]).length?`<div class="flex flex-wrap gap-1 mt-1.5">${s.sources.map(x=>`<span class="text-[10px] bg-slate-50 border border-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">${x}</span>`).join('')}</div>`:''}
+      </div>`).join('')
+    : '<div class="text-xs text-slate-400 italic text-center py-6">Sin sugerencias aún.</div>';
+}
+
+window.useSuggestion = function(i){
+  const s = (detail?.suggestions||[])[i];
+  if(!s) return;
+  document.getElementById('reply-body').value = s.body;
+  chosenLabel = s.label;
+  isEdited = false;
+  document.getElementById('suggestion-used').textContent = `Tomada: "${s.label}"`;
+};
+document.getElementById('reply-body').addEventListener('input',()=>{
+  if(chosenLabel){ isEdited=true; document.getElementById('suggestion-used').textContent=`Editada: "${chosenLabel}"`; }
+});
+
+// Enviar
+document.getElementById('btn-send').onclick = async ()=>{
+  const body = document.getElementById('reply-body').value.trim();
+  if(!body||!caseId) return;
+  const lastIn = [...(detail?.messages||[])].reverse().find(m=>m.direction==='in');
+  const btn = document.getElementById('btn-send');
+  btn.disabled=true;
+  try {
+    await api.post('/cases/'+caseId+'/reply',{
+      agent_id: session.agentId,
+      body,
+      channel: lastIn?.channel||'whatsapp',
+      based_on_suggestion_label: activeTab==='note'?null:chosenLabel,
+      edited_from_ai: isEdited,
+    });
+    document.getElementById('reply-body').value='';
+    document.getElementById('suggestion-used').textContent='Enviado ✓';
+    chosenLabel=null; isEdited=false;
+    load();
+  } finally { btn.disabled=false; }
+};
+
+// Pedir a la IA — regenera sugerencias y las reemplaza
+document.getElementById('btn-custom').onclick = async ()=>{
+  const inst = document.getElementById('custom-instruction').value.trim();
+  if(!inst||!caseId) return;
+  const btn = document.getElementById('btn-custom');
+  btn.textContent='…';
+  btn.disabled=true;
+  // Mostrar spinner en el panel
+  renderSuggestions([]);
+  document.getElementById('suggestions-container').innerHTML =
+    '<div class="text-xs text-slate-400 text-center py-6 animate-pulse">Generando con IA…</div>';
+  try {
+    const r = await api.post('/cases/'+caseId+'/suggestions',{
+      instruction: inst,
+      agent_id: session.agentId,
+    });
+    if(detail) detail.suggestions = r.suggestions;
+    renderSuggestions(r.suggestions||[]);
+    document.getElementById('custom-instruction').value='';
+  } catch(e){
+    document.getElementById('suggestions-container').innerHTML =
+      `<div class="text-xs text-red-500 text-center py-4">Error: ${e.message}</div>`;
+  } finally { btn.innerHTML=`<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Pedir`; btn.disabled=false; }
+};
+
+// Cerrar caso
+document.getElementById('btn-close-case').onclick = async ()=>{
+  if(!confirm('¿Cerrar este caso?')) return;
+  const storage_case = detail?.case;
+  if(storage_case){ storage_case.status='cerrado'; }
+  // No hay endpoint de cierre en el mockup — simular visualmente
+  document.getElementById('btn-close-case').textContent='Cerrado ✓';
+  document.getElementById('btn-close-case').disabled=true;
+};
+
+// ── Tags ─────────────────────────────────────────────────────────────────────
+let allTags = [];  // tags del workspace
+let pickerOpen = false;
+
+async function loadTags(){
+  try { allTags = await api.get('/crm/tags'); } catch(e){}
+}
+
+function renderActiveTags(){
+  if(!detail) return;
+  const caseTags = detail.case.tags || [];
+  const tagMap = Object.fromEntries(allTags.map(t=>[t.id,t]));
+
+  document.getElementById('active-tags').innerHTML = caseTags.length
+    ? caseTags.map(tid => {
+        const t = tagMap[tid] || {nombre: tid, color: '#64748B'};
+        return `<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium text-white" style="background:${t.color}">
+          ${escapeHtml(t.nombre)}
+          <button onclick="removeTag('${tid}')" class="opacity-70 hover:opacity-100 ml-0.5 leading-none text-sm">×</button>
+        </span>`;
+      }).join('')
+    : '<span class="text-xs text-slate-400 italic">Sin tags</span>';
+}
+
+function renderTagPicker(filter=''){
+  if(!detail) return;
+  const caseTags = new Set(detail.case.tags || []);
+  const filtered = allTags.filter(t =>
+    !filter || t.nombre.toLowerCase().includes(filter.toLowerCase())
+  );
+  document.getElementById('tag-picker-list').innerHTML = filtered.length
+    ? filtered.map(t => {
+        const active = caseTags.has(t.id);
+        return `<div class="flex items-center justify-between px-3 py-1.5 hover:bg-slate-50 cursor-pointer" onclick="${active?`removeTag('${t.id}')`:`addTag('${t.id}')`}">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${t.color}"></span>
+            <span class="text-xs">${escapeHtml(t.nombre)}</span>
+          </div>
+          ${active ? '<svg class="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>' : ''}
+        </div>`;
+      }).join('')
+    : '<div class="text-xs text-slate-400 italic px-3 py-2">Sin resultados</div>';
+}
+
+window.addTag = async function(tagId){
+  if(!caseId) return;
+  const r = await api.post(`/cases/${caseId}/tags/${tagId}`);
+  detail.case.tags = r.tags;
+  renderActiveTags();
+  renderTagPicker(document.getElementById('tag-search').value);
+  // Propagar al inbox si estamos en iframe
+  if(inIframe && window.parent?.loadInbox) window.parent.loadInbox();
+};
+
+window.removeTag = async function(tagId){
+  if(!caseId) return;
+  const r = await fetch(`${API}/cases/${caseId}/tags/${tagId}`,{method:'DELETE'}).then(r=>r.json());
+  detail.case.tags = r.tags;
+  renderActiveTags();
+  renderTagPicker(document.getElementById('tag-search').value);
+};
+
+document.getElementById('btn-show-tag-picker').onclick = ()=>{
+  pickerOpen = !pickerOpen;
+  document.getElementById('tag-picker').classList.toggle('hidden', !pickerOpen);
+  if(pickerOpen){ renderTagPicker(); document.getElementById('tag-search').focus(); }
+};
+
+document.getElementById('tag-search').oninput = e => renderTagPicker(e.target.value);
+
+// Cerrar picker al hacer click fuera
+document.addEventListener('click', e=>{
+  if(!document.getElementById('panel-ficha').contains(e.target)){
+    pickerOpen = false;
+    document.getElementById('tag-picker').classList.add('hidden');
+  }
+});
+
+// Llamar renderActiveTags después de cada load
+const _origRender = render;
+render = function(){
+  _origRender();
+  renderActiveTags();
+  if(pickerOpen) renderTagPicker(document.getElementById('tag-search').value);
+};
+
+if(!inIframe) ui.wireHealth();
+loadTags().then(()=>{ load(); });
+setInterval(load, 5000);
+</script>
+</body></html>

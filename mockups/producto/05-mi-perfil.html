@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mi perfil · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 flex flex-col overflow-hidden">
+  <!-- Header -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+    <div>
+      <h1 class="font-semibold text-slate-900">Mi perfil</h1>
+      <p class="text-xs text-slate-500 mt-0.5">El system prompt acá configurado se usa cuando el copiloto genera sugerencias para vos. No afecta a los demás agentes.</p>
+    </div>
+    <span id="health-pill" class="text-xs text-slate-400"></span>
+  </div>
+
+  <!-- Contenido -->
+  <div class="flex-1 overflow-y-auto px-6 py-5">
+    <div class="max-w-2xl space-y-4">
+
+      <!-- Datos del agente -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="flex items-center gap-3 mb-4">
+          <div id="agent-avatar" class="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 font-semibold text-sm flex-shrink-0"></div>
+          <div>
+            <div id="agent-name" class="font-semibold text-slate-900">—</div>
+            <div id="agent-role" class="text-xs text-slate-500">—</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Email</div>
+            <div id="agent-email" class="text-slate-700">—</div>
+          </div>
+          <div>
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Permisos LLM</div>
+            <div id="agent-perms" class="flex gap-1 flex-wrap"></div>
+          </div>
+          <div>
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Límite tokens/día</div>
+            <div id="agent-limit" class="text-slate-700">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- System prompt -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <div class="font-semibold text-slate-900">System prompt</div>
+            <div class="text-xs text-slate-500 mt-0.5">Define tu tono, estructura ideal de respuestas y qué evitar.</div>
+          </div>
+          <button id="save"
+            class="bg-slate-900 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors">
+            Guardar
+          </button>
+        </div>
+        <textarea id="prompt" rows="9"
+          class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-700 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none leading-relaxed"></textarea>
+        <p class="text-xs text-slate-400 mt-2">Tip: cada N días el auto-tuning puede sugerirte ajustes basados en tus ediciones reales.</p>
+      </div>
+
+      <!-- Métricas -->
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="font-semibold text-slate-900 mb-3">Mis métricas</div>
+        <div id="metrics" class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-50 rounded-lg px-3 py-2.5">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Llamadas IA</div>
+            <div id="m-calls" class="text-lg font-semibold text-slate-900">—</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg px-3 py-2.5">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Costo aprox.</div>
+            <div id="m-cost" class="text-lg font-semibold text-slate-900">—</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg px-3 py-2.5">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Tokens in / out</div>
+            <div id="m-tokens" class="text-sm font-medium text-slate-700">—</div>
+          </div>
+          <div class="bg-slate-50 rounded-lg px-3 py-2.5">
+            <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">Aceptación IA</div>
+            <div id="m-accept" class="text-xs text-slate-700 leading-relaxed">—</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('perfil');
+ui.wireHealth();
+
+(async () => {
+  const a = await api.get('/crm/agents/' + session.agentId);
+
+  const initials = a.nombre.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
+  document.getElementById('agent-avatar').textContent = initials;
+  document.getElementById('agent-name').textContent = a.nombre;
+  document.getElementById('agent-role').textContent = `${a.rol} · ${a.area}`;
+  document.getElementById('agent-email').textContent = a.email;
+  document.getElementById('agent-limit').textContent = (a.limite_tokens_dia||0).toLocaleString() + ' tokens';
+
+  const models = ['haiku','sonnet','opus'];
+  const perms = a.permisos_modelo || [];
+  document.getElementById('agent-perms').innerHTML = models.map(m=>
+    `<span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${perms.includes(m)?'bg-blue-100 text-blue-700':'bg-slate-100 text-slate-400'}">${m}</span>`
+  ).join('');
+
+  document.getElementById('prompt').value = a.system_prompt || '';
+
+  try {
+    const met = await api.get('/metrics');
+    const byAgent = met.tokens.by_agent[session.agentId] || {in:0,out:0,cost_usd:0,calls:0};
+    document.getElementById('m-calls').textContent = byAgent.calls;
+    document.getElementById('m-cost').textContent = 'USD ' + (byAgent.cost_usd||0).toFixed(4);
+    document.getElementById('m-tokens').textContent = (byAgent.in||0).toLocaleString() + ' / ' + (byAgent.out||0).toLocaleString();
+    const acc = met.operativo?.aceptacion_ia || {};
+    document.getElementById('m-accept').innerHTML =
+      `Tal cual: <b>${acc.tal_cual||0}</b><br>Editadas: <b>${acc.editadas||0}</b><br>Otro: <b>${acc.otro||0}</b>`;
+  } catch(e) {
+    document.getElementById('m-calls').textContent = '—';
+  }
+})();
+
+document.getElementById('save').onclick = async () => {
+  const btn = document.getElementById('save');
+  const orig = btn.textContent;
+  btn.textContent = 'Guardando…'; btn.disabled = true;
+  try {
+    await api.put('/crm/agents/' + session.agentId + '/system_prompt', { system_prompt: document.getElementById('prompt').value });
+    btn.textContent = 'Guardado ✓';
+    btn.className = 'bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
+    setTimeout(() => {
+      btn.textContent = orig; btn.disabled = false;
+      btn.className = 'bg-slate-900 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors';
+    }, 2000);
+  } catch(e) { btn.textContent = orig; btn.disabled = false; }
+};
+</script>
+</body></html>
