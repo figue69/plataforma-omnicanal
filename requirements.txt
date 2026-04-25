@@ -1,0 +1,3 @@
+# Este archivo existe para que Nixpacks detecte Python.
+# Las dependencias reales están en mockups/backend/requirements.txt
+-r mockups/backend/requirements.txt
