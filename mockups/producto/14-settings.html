@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settings · Plataforma</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/app.js"></script>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;}</style>
+</head>
+<body class="flex h-screen bg-slate-50 text-slate-800 text-sm overflow-hidden">
+<div id="sidebar"></div>
+
+<div class="flex-1 flex flex-col overflow-hidden">
+
+  <!-- Header -->
+  <div class="bg-white border-b border-slate-200 px-6 py-3 flex-shrink-0">
+    <div class="flex items-center justify-between mb-3">
+      <h1 class="font-semibold text-slate-900">Settings</h1>
+      <span id="health-pill" class="text-xs text-slate-400"></span>
+    </div>
+    <div class="flex gap-1">
+      <button data-tab="usuarios" class="tab-btn text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-900 text-white">Usuarios</button>
+      <button data-tab="canales"  class="tab-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">Canales</button>
+      <button data-tab="workspace" class="tab-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100">Workspace</button>
+    </div>
+  </div>
+
+  <div class="flex-1 overflow-y-auto px-6 py-5">
+
+    <!-- ── TAB: USUARIOS ─────────────────────────────────────────────────── -->
+    <div id="tab-usuarios" class="max-w-2xl space-y-4">
+
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-slate-500">Agentes y supervisores con acceso a la plataforma.</p>
+        <button onclick="openModal()" class="bg-slate-900 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          Nuevo usuario
+        </button>
+      </div>
+
+      <div id="users-list" class="space-y-2"></div>
+    </div>
+
+    <!-- ── TAB: CANALES ──────────────────────────────────────────────────── -->
+    <div id="tab-canales" class="max-w-2xl space-y-4 hidden">
+      <p class="text-xs text-slate-500">Estado de las conexiones de canal. Las integraciones reales se activan en el prototipo (Fase 1).</p>
+
+      <div class="space-y-3">
+        <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">💬</span>
+            <div>
+              <div class="font-semibold">WhatsApp Business</div>
+              <div class="text-xs text-slate-500">BSP: pendiente · Número: +54 9 11 0000-0000</div>
+              <div class="text-xs text-blue-600 mt-1">Deep link activo: <code class="bg-blue-50 px-1 rounded">wa.me/5491100000000</code></div>
+            </div>
+          </div>
+          <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Mock activo</span>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">✉️</span>
+            <div>
+              <div class="font-semibold">Email (Gmail)</div>
+              <div class="text-xs text-slate-500">OAuth: pendiente · Cuenta: ventas@empresa.com.ar</div>
+            </div>
+          </div>
+          <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Mock activo</span>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">📷</span>
+            <div>
+              <div class="font-semibold">Instagram DM</div>
+              <div class="text-xs text-slate-500">Sin cuenta conectada</div>
+            </div>
+          </div>
+          <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">No conectado</span>
+        </div>
+
+        <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <span class="text-2xl">✈️</span>
+            <div>
+              <div class="font-semibold">Telegram</div>
+              <div class="text-xs text-slate-500">Sin bot configurado</div>
+            </div>
+          </div>
+          <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">No conectado</span>
+        </div>
+      </div>
+
+      <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+        <b>Fase 1:</b> WhatsApp real vía BSP (Twilio / 360dialog) + Gmail API con OAuth. Las conexiones se configuran desde acá una vez que estén disponibles.
+      </div>
+    </div>
+
+    <!-- ── TAB: WORKSPACE ────────────────────────────────────────────────── -->
+    <div id="tab-workspace" class="max-w-2xl space-y-4 hidden">
+      <p class="text-xs text-slate-500">Configuración general del workspace.</p>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+        <div>
+          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Nombre del workspace</label>
+          <input value="F&A Turismo" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Zona horaria</label>
+          <select class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+            <option selected>America/Argentina/Buenos_Aires (UTC-3)</option>
+            <option>America/New_York (UTC-5)</option>
+            <option>Europe/Madrid (UTC+1)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-slate-500 uppercase tracking-wide block mb-1.5">Idioma por defecto</label>
+          <select class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+            <option selected>Español (es)</option>
+            <option>English (en)</option>
+            <option>Português (pt)</option>
+          </select>
+        </div>
+        <button class="bg-slate-900 hover:bg-slate-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors">Guardar cambios</button>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-5">
+        <div class="font-semibold text-slate-900 mb-3">Integraciones IA</div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-medium">Anthropic (Claude)</div>
+              <div class="text-xs text-slate-500">Haiku + Sonnet activos</div>
+            </div>
+            <span id="ai-status" class="text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">Conectado</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-medium">Tourbo API</div>
+              <div class="text-xs text-slate-500">Vuelos y disponibilidad</div>
+            </div>
+            <span id="tourbo-status" class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">—</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="font-medium">SerpAPI</div>
+              <div class="text-xs text-slate-500">Google Flights / Hotels fallback</div>
+            </div>
+            <span id="serp-status" class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── MODAL: Crear / Editar usuario ────────────────────────────────────────── -->
+<div id="modal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-lg w-full max-w-md">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <h2 id="modal-title" class="font-semibold text-slate-900">Nuevo usuario</h2>
+      <button onclick="closeModal()" class="text-slate-400 hover:text-slate-700">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="px-6 py-4 space-y-3">
+      <input type="hidden" id="modal-user-id">
+
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2">
+          <label class="text-xs font-medium text-slate-600 block mb-1">Nombre completo *</label>
+          <input id="f-nombre" placeholder="Ana López" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+        </div>
+        <div class="col-span-2">
+          <label class="text-xs font-medium text-slate-600 block mb-1">Email *</label>
+          <input id="f-email" type="email" placeholder="ana@empresa.com" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+        </div>
+        <div id="password-row" class="col-span-2">
+          <label class="text-xs font-medium text-slate-600 block mb-1">Contraseña *</label>
+          <input id="f-password" type="password" placeholder="mínimo 4 caracteres" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">Rol</label>
+          <select id="f-rol" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+            <option value="agente">Agente</option>
+            <option value="supervisor">Supervisor</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-slate-600 block mb-1">Área</label>
+          <select id="f-area" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+            <option value="ventas">Ventas</option>
+            <option value="guardia">Guardia 24/7</option>
+            <option value="operaciones">Operaciones</option>
+            <option value="producto">Producto</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="text-xs font-medium text-slate-600 block mb-1">Modelos IA permitidos</label>
+          <div class="flex gap-2">
+            <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="m-haiku" value="haiku" checked class="rounded"> <span class="text-xs">Haiku</span></label>
+            <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="m-sonnet" value="sonnet" checked class="rounded"> <span class="text-xs">Sonnet</span></label>
+            <label class="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" id="m-opus" value="opus" class="rounded"> <span class="text-xs">Opus</span></label>
+          </div>
+        </div>
+        <div class="col-span-2">
+          <label class="text-xs font-medium text-slate-600 block mb-1">Límite de tokens/día</label>
+          <input id="f-limite" type="number" value="200000" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+        </div>
+      </div>
+
+      <div id="modal-error" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+    </div>
+
+    <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+      <button onclick="closeModal()" class="text-xs px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>
+      <button id="modal-save" onclick="saveUser()" class="text-xs px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-semibold transition-colors">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: Cambiar contraseña ─────────────────────────────────────────────── -->
+<div id="modal-pw" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-lg w-full max-w-sm">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="font-semibold text-slate-900">Cambiar contraseña</h2>
+      <button onclick="closePwModal()" class="text-slate-400 hover:text-slate-700">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="px-6 py-4 space-y-3">
+      <input type="hidden" id="pw-user-id">
+      <div>
+        <label class="text-xs font-medium text-slate-600 block mb-1">Nueva contraseña</label>
+        <input id="pw-new" type="password" placeholder="mínimo 4 caracteres" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50">
+      </div>
+      <div id="pw-error" class="hidden text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+    </div>
+    <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
+      <button onclick="closePwModal()" class="text-xs px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Cancelar</button>
+      <button onclick="savePassword()" class="text-xs px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-semibold transition-colors">Cambiar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('sidebar').innerHTML = ui.sidebar('settings');
+ui.wireHealth();
+
+// ── Tabs ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-btn').forEach(b => {
+      b.className = b === btn
+        ? 'tab-btn text-xs px-3 py-1.5 rounded-lg font-medium bg-slate-900 text-white'
+        : 'tab-btn text-xs px-3 py-1.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100';
+    });
+    document.querySelectorAll('[id^="tab-"]').forEach(d => d.classList.add('hidden'));
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  };
+});
+
+// ── Cargar usuarios ───────────────────────────────────────────────────────────
+let users = [];
+
+async function loadUsers() {
+  users = await api.get('/crm/agents');
+  renderUsers();
+}
+
+function renderUsers() {
+  document.getElementById('users-list').innerHTML = users.map(u => `
+    <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        ${fmt.avatar(u.nombre)}
+        <div class="min-w-0">
+          <div class="font-semibold text-slate-900">${escapeHtml(u.nombre)}</div>
+          <div class="text-xs text-slate-500">${u.email} · ${u.rol} · ${u.area}</div>
+          <div class="flex gap-1 mt-1">
+            ${(u.permisos_modelo||[]).map(m =>
+              `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">${m}</span>`
+            ).join('')}
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-1.5 flex-shrink-0">
+        <button onclick="openPwModal('${u.id}')"
+          class="text-xs border border-slate-200 hover:bg-slate-50 text-slate-600 px-2.5 py-1.5 rounded-lg transition-colors">
+          Contraseña
+        </button>
+        <button onclick="openEditModal('${u.id}')"
+          class="text-xs border border-slate-200 hover:bg-slate-50 text-slate-600 px-2.5 py-1.5 rounded-lg transition-colors">
+          Editar
+        </button>
+        <button onclick="deleteUser('${u.id}', '${escapeHtml(u.nombre)}')"
+          class="text-xs border border-red-200 hover:bg-red-50 text-red-600 px-2.5 py-1.5 rounded-lg transition-colors">
+          Eliminar
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+// ── Modal Crear/Editar ────────────────────────────────────────────────────────
+function openModal() {
+  document.getElementById('modal-title').textContent = 'Nuevo usuario';
+  document.getElementById('modal-user-id').value = '';
+  document.getElementById('f-nombre').value = '';
+  document.getElementById('f-email').value = '';
+  document.getElementById('f-password').value = '';
+  document.getElementById('f-rol').value = 'agente';
+  document.getElementById('f-area').value = 'ventas';
+  document.getElementById('f-limite').value = '200000';
+  document.getElementById('m-haiku').checked = true;
+  document.getElementById('m-sonnet').checked = true;
+  document.getElementById('m-opus').checked = false;
+  document.getElementById('password-row').classList.remove('hidden');
+  document.getElementById('modal-error').classList.add('hidden');
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('f-nombre').focus();
+}
+
+function openEditModal(id) {
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('modal-title').textContent = 'Editar usuario';
+  document.getElementById('modal-user-id').value = u.id;
+  document.getElementById('f-nombre').value = u.nombre;
+  document.getElementById('f-email').value = u.email;
+  document.getElementById('f-rol').value = u.rol;
+  document.getElementById('f-area').value = u.area;
+  document.getElementById('f-limite').value = u.limite_tokens_dia;
+  document.getElementById('m-haiku').checked = (u.permisos_modelo||[]).includes('haiku');
+  document.getElementById('m-sonnet').checked = (u.permisos_modelo||[]).includes('sonnet');
+  document.getElementById('m-opus').checked = (u.permisos_modelo||[]).includes('opus');
+  document.getElementById('password-row').classList.add('hidden');
+  document.getElementById('modal-error').classList.add('hidden');
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('f-nombre').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+}
+
+async function saveUser() {
+  const id = document.getElementById('modal-user-id').value;
+  const nombre = document.getElementById('f-nombre').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  const password = document.getElementById('f-password').value;
+  const rol = document.getElementById('f-rol').value;
+  const area = document.getElementById('f-area').value;
+  const limite = parseInt(document.getElementById('f-limite').value) || 200000;
+  const permisos = ['haiku','sonnet','opus'].filter(m => document.getElementById('m-'+m).checked);
+  const errEl = document.getElementById('modal-error');
+
+  if (!nombre || !email) { errEl.textContent = 'Nombre y email son obligatorios.'; errEl.classList.remove('hidden'); return; }
+  if (!id && !password) { errEl.textContent = 'La contraseña es obligatoria para nuevos usuarios.'; errEl.classList.remove('hidden'); return; }
+
+  const btn = document.getElementById('modal-save');
+  btn.textContent = 'Guardando…'; btn.disabled = true;
+  errEl.classList.add('hidden');
+
+  try {
+    if (id) {
+      await api.put('/admin/users/' + id, { nombre, email, rol, area, permisos_modelo: permisos, limite_tokens_dia: limite });
+    } else {
+      await api.post('/admin/users', { nombre, email, password, rol, area, permisos_modelo: permisos, limite_tokens_dia: limite });
+    }
+    closeModal();
+    await loadUsers();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Guardar'; btn.disabled = false;
+  }
+}
+
+// ── Modal Contraseña ──────────────────────────────────────────────────────────
+function openPwModal(id) {
+  document.getElementById('pw-user-id').value = id;
+  document.getElementById('pw-new').value = '';
+  document.getElementById('pw-error').classList.add('hidden');
+  document.getElementById('modal-pw').classList.remove('hidden');
+  document.getElementById('pw-new').focus();
+}
+function closePwModal() {
+  document.getElementById('modal-pw').classList.add('hidden');
+}
+async function savePassword() {
+  const id = document.getElementById('pw-user-id').value;
+  const password = document.getElementById('pw-new').value;
+  const errEl = document.getElementById('pw-error');
+  if (!password || password.length < 4) { errEl.textContent = 'Mínimo 4 caracteres.'; errEl.classList.remove('hidden'); return; }
+  try {
+    await api.put('/admin/users/' + id + '/password', { password });
+    closePwModal();
+  } catch(e) { errEl.textContent = e.message; errEl.classList.remove('hidden'); }
+}
+
+// ── Eliminar usuario ──────────────────────────────────────────────────────────
+async function deleteUser(id, nombre) {
+  if (!confirm(`¿Eliminar a ${nombre}? Esta acción no se puede deshacer.`)) return;
+  try {
+    await api.del('/admin/users/' + id);
+    await loadUsers();
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ── Workspace: estado de integraciones ────────────────────────────────────────
+async function loadHealth() {
+  try {
+    const h = await api.get('/health');
+    document.getElementById('ai-status').textContent = h.ai_real ? 'Conectado' : 'Mock';
+    document.getElementById('ai-status').className = `text-xs font-medium px-2.5 py-1 rounded-full ${h.ai_real ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`;
+    document.getElementById('tourbo-status').textContent = h.tourbo_configured ? 'Conectado' : 'No configurado';
+    document.getElementById('tourbo-status').className = `text-xs font-medium px-2.5 py-1 rounded-full ${h.tourbo_configured ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`;
+    document.getElementById('serp-status').textContent = h.serpapi_configured ? 'Conectado' : 'No configurado';
+    document.getElementById('serp-status').className = `text-xs font-medium px-2.5 py-1 rounded-full ${h.serpapi_configured ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`;
+  } catch(e) {}
+}
+
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeModal(); closePwModal(); }
+});
+
+loadUsers();
+loadHealth();
+</script>
+</body></html>

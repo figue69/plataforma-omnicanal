@@ -803,6 +803,115 @@ def get_metrics(_: str = Depends(auth.get_current_agent_id)) -> Dict[str, Any]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Admin — ABM de usuarios
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CreateUserPayload(BaseModel):
+    nombre: str
+    email: str
+    password: str
+    rol: str = "agente"
+    area: str = "ventas"
+    permisos_modelo: List[str] = ["haiku", "sonnet"]
+    limite_tokens_dia: int = 200000
+    system_prompt: str = ""
+
+
+class UpdateUserPayload(BaseModel):
+    nombre: Optional[str] = None
+    email: Optional[str] = None
+    rol: Optional[str] = None
+    area: Optional[str] = None
+    permisos_modelo: Optional[List[str]] = None
+    limite_tokens_dia: Optional[int] = None
+    system_prompt: Optional[str] = None
+
+
+class ChangePasswordPayload(BaseModel):
+    password: str
+
+
+@app.post("/admin/users")
+def create_user(
+    payload: CreateUserPayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    new_id = f"ag-{uuid.uuid4().hex[:8]}"
+    user = db.create_agent(
+        id=new_id,
+        nombre=payload.nombre,
+        rol=payload.rol,
+        area=payload.area,
+        email=payload.email,
+        password_hash=auth.hash_password(payload.password),
+        system_prompt=payload.system_prompt,
+        permisos_modelo=payload.permisos_modelo,
+        limite_tokens_dia=payload.limite_tokens_dia,
+    )
+    return user
+
+
+@app.put("/admin/users/{user_id}")
+def update_user(
+    user_id: str,
+    payload: UpdateUserPayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    existing = db.get_agent_by_id(user_id)
+    if not existing:
+        raise HTTPException(404, "Usuario no encontrado")
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        if payload.nombre is not None:
+            cur.execute("UPDATE agents SET nombre = %s WHERE id = %s", (payload.nombre, user_id))
+        if payload.email is not None:
+            cur.execute("UPDATE agents SET email = %s WHERE id = %s", (payload.email.lower().strip(), user_id))
+        if payload.rol is not None:
+            cur.execute("UPDATE agents SET rol = %s WHERE id = %s", (payload.rol, user_id))
+        if payload.area is not None:
+            cur.execute("UPDATE agents SET area = %s WHERE id = %s", (payload.area, user_id))
+        if payload.permisos_modelo is not None:
+            cur.execute("UPDATE agents SET permisos_modelo = %s WHERE id = %s", (payload.permisos_modelo, user_id))
+        if payload.limite_tokens_dia is not None:
+            cur.execute("UPDATE agents SET limite_tokens_dia = %s WHERE id = %s", (payload.limite_tokens_dia, user_id))
+        if payload.system_prompt is not None:
+            cur.execute("UPDATE agents SET system_prompt = %s WHERE id = %s", (payload.system_prompt, user_id))
+    return db.get_agent_by_id(user_id)
+
+
+@app.put("/admin/users/{user_id}/password")
+def change_password(
+    user_id: str,
+    payload: ChangePasswordPayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    if not db.get_agent_by_id(user_id):
+        raise HTTPException(404, "Usuario no encontrado")
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE agents SET password_hash = %s WHERE id = %s",
+            (auth.hash_password(payload.password), user_id),
+        )
+    return {"ok": True}
+
+
+@app.delete("/admin/users/{user_id}")
+def delete_user(
+    user_id: str,
+    current_agent_id: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    if user_id == current_agent_id:
+        raise HTTPException(400, "No podés eliminar tu propio usuario")
+    if not db.get_agent_by_id(user_id):
+        raise HTTPException(404, "Usuario no encontrado")
+    with db.get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM agents WHERE id = %s", (user_id,))
+    return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Reset (útil para demos)
 # ──────────────────────────────────────────────────────────────────────────────
 
