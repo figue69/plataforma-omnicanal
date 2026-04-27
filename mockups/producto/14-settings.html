@@ -649,10 +649,15 @@ window.createGmailChannel = async function() {
   if (!nombre) { alert('Ingresá un nombre para el canal.'); return; }
   const checked = [...document.querySelectorAll('#gmail-agents-list input:checked')].map(i => i.value);
   showAddStep('saving');
-  const ch = await api.post('/channels', {type: 'gmail', nombre, assigned_agents: checked});
-  closeAddChannelModal();
-  loadChannels();
-  window.open(`/channels/${ch.id}/gmail/auth`, '_blank');
+  try {
+    const ch = await api.post('/channels', {type: 'gmail', nombre, assigned_agents: checked});
+    closeAddChannelModal();
+    loadChannels();
+    window.open(`/channels/${ch.id}/gmail/auth`, '_blank');
+  } catch(e) {
+    showAddStep('gmail');
+    alert('Error al crear el canal: ' + (e.message || e));
+  }
 };
 
 window.createTgChannel = async function() {
@@ -661,10 +666,15 @@ window.createTgChannel = async function() {
   if (!nombre) { alert('Ingresá un nombre para el canal.'); return; }
   const checked = [...document.querySelectorAll('#tg-agents-list input:checked')].map(i => i.value);
   showAddStep('saving');
-  const ch = await api.post('/channels', {type: 'telegram', nombre, bot_token, assigned_agents: checked});
-  closeAddChannelModal();
-  await api.post(`/channels/${ch.id}/telegram/register-webhook`, {});
-  loadChannels();
+  try {
+    const ch = await api.post('/channels', {type: 'telegram', nombre, bot_token, assigned_agents: checked});
+    closeAddChannelModal();
+    await api.post(`/channels/${ch.id}/telegram/register-webhook`, {}).catch(()=>{});
+    loadChannels();
+  } catch(e) {
+    showAddStep('telegram');
+    alert('Error al crear el canal: ' + (e.message || e));
+  }
 };
 
 // ── Edit channel modal ────────────────────────────────────────────────────────

@@ -129,15 +129,14 @@ class NewContactPayload(BaseModel):
 
 class ChannelCreatePayload(BaseModel):
     type: str                           # "gmail" | "telegram" | "whatsapp"
-    name: str                           # nombre descriptivo, ej. "Ventas Principal"
+    nombre: str                         # nombre descriptivo, ej. "Ventas Principal"
     assigned_agents: List[str] = []
-    # Gmail
-    bot_token: Optional[str] = None     # Telegram
+    bot_token: Optional[str] = None     # solo Telegram
     # WhatsApp usa env vars globales por ahora
 
 
 class ChannelUpdatePayload(BaseModel):
-    name: Optional[str] = None
+    nombre: Optional[str] = None
     assigned_agents: Optional[List[str]] = None
     active: Optional[bool] = None
 
@@ -1220,7 +1219,7 @@ def create_channel(
     channel: Dict[str, Any] = {
         "id": channel_id,
         "type": payload.type,
-        "name": payload.name,
+        "nombre": payload.nombre,
         "active": True,
         "assigned_agents": payload.assigned_agents,
         "created_at": datetime.utcnow().isoformat(),
@@ -1257,8 +1256,8 @@ def update_channel(
     ch = _find_channel(crm, channel_id)
     if not ch:
         raise HTTPException(404, "Canal no encontrado")
-    if payload.name is not None:
-        ch["name"] = payload.name
+    if payload.nombre is not None:
+        ch["nombre"] = payload.nombre
     if payload.assigned_agents is not None:
         ch["assigned_agents"] = payload.assigned_agents
     if payload.active is not None:
