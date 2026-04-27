@@ -19,9 +19,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,6 +35,7 @@ import reminders as reminders_mod
 import tuning as tuning_mod
 from providers import serpapi as serpapi_provider
 from providers import tourbo as tourbo_provider
+from providers import whatsapp as wa
 
 ROOT = Path(__file__).parent
 MOCKUPS = ROOT.parent  # mockups/
@@ -165,6 +166,7 @@ def health() -> Dict[str, Any]:
         "ai_real": ai.USE_REAL,
         "tourbo_configured": tourbo_provider.is_configured(),
         "serpapi_configured": serpapi_provider.is_configured(),
+        "whatsapp_configured": wa.is_configured(),
     }
 
 
@@ -627,10 +629,21 @@ def post_reply(
         "based_on_suggestion_label": payload.based_on_suggestion_label,
         "edited_from_ai": payload.edited_from_ai,
     }
+
+    # Envío real por WhatsApp si el canal es whatsapp y tenemos el número del contacto
+    wa_result = None
+    if channel == "whatsapp" and wa.is_configured():
+        crm = db.load_crm()
+        contact = find_contact(crm, case.get("contact_id", ""))
+        phone = (contact or {}).get("whatsapp", "")
+        if phone:
+            wa_result = wa.send_text(phone, payload.body)
+            out_msg["wa_send_result"] = wa_result
+
     storage["messages"].append(out_msg)
     case["updated_at"] = datetime.utcnow().isoformat()
     db.save_storage(storage)
-    return {"ok": True, "message": out_msg}
+    return {"ok": True, "message": out_msg, "wa_result": wa_result}
 
 
 @app.get("/messages")
@@ -909,6 +922,160 @@ def delete_user(
         cur = conn.cursor()
         cur.execute("DELETE FROM agents WHERE id = %s", (user_id,))
     return {"ok": True}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WhatsApp Webhook (Meta Cloud API)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.get("/webhook/whatsapp", response_class=PlainTextResponse)
+def whatsapp_verify(request: Request) -> str:
+    """Meta llama este endpoint al configurar el webhook para verificar la URL."""
+    params = dict(request.query_params)
+    challenge = wa.verify_webhook(
+        mode=params.get("hub.mode", ""),
+        token=params.get("hub.verify_token", ""),
+        challenge=params.get("hub.challenge", ""),
+    )
+    if challenge is None:
+        raise HTTPException(403, "Token de verificación inválido")
+    return challenge
+
+
+@app.post("/webhook/whatsapp")
+async def whatsapp_incoming(request: Request) -> Dict[str, Any]:
+    """Recibe mensajes entrantes desde Meta y los procesa igual que /messages."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Payload inválido")
+
+    parsed = wa.parse_webhook(body)
+    if not parsed:
+        # delivery receipt, read receipt, etc. — responder 200 para que Meta no reintente
+        return {"ok": True, "skipped": True}
+
+    from_phone = parsed["from_phone"]
+    text = parsed["text"]
+    wa_msg_id = parsed.get("wa_message_id", "")
+
+    storage = db.load_storage()
+    crm = db.load_crm()
+
+    # Buscar contacto por número de WhatsApp
+    contact = None
+    all_contacts = crm.get("agencias", []) + crm.get("pasajeros", [])
+    for c in all_contacts:
+        phone = (c.get("whatsapp") or "").lstrip("+").replace(" ", "").replace("-", "")
+        if phone and phone == from_phone:
+            contact = c
+            break
+
+    if not contact:
+        # Contacto desconocido — crear uno temporal
+        new_id = f"px-wa-{uuid.uuid4().hex[:8]}"
+        contact = {
+            "id": new_id,
+            "tipo": "pasajero",
+            "nombre": parsed.get("from_name") or f"WA {from_phone}",
+            "whatsapp": f"+{from_phone}",
+            "email": None,
+            "idioma": "es",
+            "system_prompt": "",
+            "historial_viajes": [],
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        crm.setdefault("pasajeros", []).append(contact)
+        db.save_crm(crm)
+
+    # Reusar la misma lógica que /messages
+    classification = ai.classify_message(text, "whatsapp", storage)
+    extracted = ai.extract_structured(text, storage)
+
+    open_cases = open_cases_for_contact(storage, contact["id"])
+    case_id, match_reason = ai.match_message_to_case(
+        text=text,
+        contact=contact,
+        open_cases=open_cases,
+        extracted=extracted,
+        storage=storage,
+    )
+
+    if not case_id:
+        new_case: Dict[str, Any] = {
+            "id": f"c-{uuid.uuid4().hex[:8]}",
+            "contact_id": contact["id"],
+            "contact_type": contact.get("tipo", "pasajero"),
+            "vendedor_id": None,
+            "titulo": _build_case_title(contact, extracted, classification),
+            "destino_principal": (extracted.get("destinos") or [None])[0],
+            "tags": [],
+            "stage": "consulta",
+            "status": "abierto",
+            "assigned_agent": "ag-ana",
+            "urgency": "alta" if classification.get("severity") == "critica" else "normal",
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "extracted_data": {k: v for k, v in extracted.items() if k != "mocked"},
+            "match_reason": match_reason,
+        }
+        storage["cases"].append(new_case)
+        case = new_case
+    else:
+        case = find_case(storage, case_id)
+        case["updated_at"] = datetime.utcnow().isoformat()
+        if classification.get("severity") == "critica":
+            case["urgency"] = "alta"
+        if extracted.get("destinos") and not case.get("destino_principal"):
+            case["destino_principal"] = extracted["destinos"][0]
+
+    message_id = f"m-{uuid.uuid4().hex[:10]}"
+    stored_msg = {
+        "id": message_id,
+        "case_id": case["id"],
+        "contact_id": contact["id"],
+        "direction": "in",
+        "channel": "whatsapp",
+        "text": text,
+        "ts": datetime.utcnow().isoformat(),
+        "read": False,
+        "classification": classification,
+        "extracted": extracted,
+        "wa_message_id": wa_msg_id,
+    }
+    storage["messages"].append(stored_msg)
+
+    # Sugerencias IA
+    provider_results: List[Dict[str, Any]] = []
+    destinos = extracted.get("destinos") or []
+    if destinos and classification.get("type") in {"cotizacion", "consulta", "reserva"}:
+        if tourbo_provider.is_configured():
+            provider_results.append(tourbo_provider.search_flights(destinos, extracted))
+        if serpapi_provider.is_configured():
+            provider_results.append(serpapi_provider.search_flights(destinos, extracted))
+        if not provider_results:
+            provider_results.append(tourbo_provider.mock_flights(destinos, extracted))
+
+    agent = db.get_agent_by_id(case.get("assigned_agent", "ag-ana")) or {}
+    rule = channel_rules_mod.get_one(crm, "whatsapp")
+    suggestions = ai.generate_suggestions(
+        message_text=text,
+        channel="whatsapp",
+        case=case,
+        contact=contact,
+        agent=agent,
+        extracted=extracted,
+        classification=classification,
+        provider_results=provider_results,
+        channel_rule=rule,
+        storage=storage,
+    )
+
+    case["last_suggestions"] = suggestions
+    case["last_provider_results"] = provider_results
+    db.save_storage(storage)
+
+    return {"ok": True, "case_id": case["id"], "message_id": message_id}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

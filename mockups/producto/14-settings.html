@@ -49,12 +49,12 @@
           <div class="flex items-center gap-3">
             <span class="text-2xl">💬</span>
             <div>
-              <div class="font-semibold">WhatsApp Business</div>
-              <div class="text-xs text-slate-500">BSP: pendiente · Número: +54 9 11 0000-0000</div>
-              <div class="text-xs text-blue-600 mt-1">Deep link activo: <code class="bg-blue-50 px-1 rounded">wa.me/5491100000000</code></div>
+              <div class="font-semibold">WhatsApp Business (Meta Cloud API)</div>
+              <div class="text-xs text-slate-500">Phone Number ID: 1146759825181133 · WABA ID: 1677197203282880</div>
+              <div class="text-xs text-slate-500 mt-0.5">Webhook: <code class="bg-slate-50 px-1 rounded">/webhook/whatsapp</code> · Verify token: <code class="bg-slate-50 px-1 rounded">plataforma-webhook-2026</code></div>
             </div>
           </div>
-          <span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Mock activo</span>
+          <span id="wa-status-badge" class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">Verificando…</span>
         </div>
 
         <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
@@ -249,6 +249,23 @@
 <script>
 document.getElementById('sidebar').innerHTML = ui.sidebar('settings');
 ui.wireHealth();
+
+// WhatsApp badge (check /health)
+(async () => {
+  try {
+    const h = await api.get('/health');
+    const badge = document.getElementById('wa-status-badge');
+    if (badge) {
+      if (h.whatsapp_configured) {
+        badge.textContent = 'Conectado';
+        badge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700';
+      } else {
+        badge.textContent = 'Sin credenciales';
+        badge.className = 'text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700';
+      }
+    }
+  } catch(e) {}
+})();
 
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
