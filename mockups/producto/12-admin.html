@@ -299,7 +299,7 @@ window.registerWebhook = async function(channelId){
 
 window.deleteChannel = async function(channelId, nombre){
   if(!confirm(`¿Eliminar el canal "${nombre}"? Esta acción no se puede deshacer.`)) return;
-  await api.delete(`/channels/${channelId}`);
+  await api.del(`/channels/${channelId}`);
   loadChannels();
 };
 
