@@ -639,10 +639,19 @@ def post_reply(
         if phone:
             wa_result = wa.send_text(phone, payload.body)
             out_msg["wa_send_result"] = wa_result
+        else:
+            wa_result = {"ok": False, "error": f"Contacto {case.get('contact_id')} no tiene número de WhatsApp registrado"}
+    elif channel == "whatsapp" and not wa.is_configured():
+        wa_result = {"ok": False, "error": "WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurados"}
 
     storage["messages"].append(out_msg)
     case["updated_at"] = datetime.utcnow().isoformat()
     db.save_storage(storage)
+
+    # Si el envío falló, devolver igualmente el mensaje guardado pero con error explícito
+    if wa_result and not wa_result.get("ok"):
+        return {"ok": False, "message": out_msg, "wa_result": wa_result, "error": wa_result.get("error")}
+
     return {"ok": True, "message": out_msg, "wa_result": wa_result}
 
 
@@ -1076,6 +1085,50 @@ async def whatsapp_incoming(request: Request) -> Dict[str, Any]:
     db.save_storage(storage)
 
     return {"ok": True, "case_id": case["id"], "message_id": message_id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Diagnóstico WhatsApp
+# ──────────────────────────────────────────────────────────────────────────────
+
+class WaTestPayload(BaseModel):
+    phone: str
+    message: str = "Hola, este es un mensaje de prueba desde PlatOmIA."
+
+
+@app.post("/admin/test-whatsapp")
+def test_whatsapp_send(
+    payload: WaTestPayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Envía un mensaje de prueba directo para verificar que el token y número funcionan."""
+    if not wa.is_configured():
+        return {"ok": False, "error": "WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurados en env"}
+    result = wa.send_text(payload.phone, payload.message)
+    return result
+
+
+@app.get("/admin/whatsapp-info")
+def whatsapp_info(_: str = Depends(auth.get_current_agent_id)) -> Dict[str, Any]:
+    """Consulta info del Phone Number ID en Meta Graph API para verificar el token."""
+    import httpx as _httpx
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+    token = os.getenv("WHATSAPP_TOKEN", "")
+    if not phone_id or not token:
+        return {"ok": False, "error": "Variables de entorno no configuradas"}
+    try:
+        r = _httpx.get(
+            f"https://graph.facebook.com/v19.0/{phone_id}",
+            params={"fields": "display_phone_number,verified_name,quality_rating,platform_type"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        data = r.json()
+        if "error" in data:
+            return {"ok": False, "meta_error": data["error"]}
+        return {"ok": True, "phone_info": data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

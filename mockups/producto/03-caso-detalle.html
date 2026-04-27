@@ -312,7 +312,7 @@ document.getElementById('btn-send').onclick = async ()=>{
   const btn = document.getElementById('btn-send');
   btn.disabled=true;
   try {
-    await api.post('/cases/'+caseId+'/reply',{
+    const res = await api.post('/cases/'+caseId+'/reply',{
       agent_id: session.agentId,
       body,
       channel: lastIn?.channel||'whatsapp',
@@ -320,7 +320,12 @@ document.getElementById('btn-send').onclick = async ()=>{
       edited_from_ai: isEdited,
     });
     document.getElementById('reply-body').value='';
-    document.getElementById('suggestion-used').textContent='Enviado ✓';
+    const sugg = document.getElementById('suggestion-used');
+    if (res?.wa_result && res.wa_result.ok === false) {
+      sugg.innerHTML = `<span class="text-red-600 font-medium">⚠ Mensaje guardado pero no enviado por WA: ${res.wa_result.error||JSON.stringify(res.wa_result)}</span>`;
+    } else {
+      sugg.textContent = 'Enviado ✓';
+    }
     chosenLabel=null; isEdited=false;
     load();
   } finally { btn.disabled=false; }
