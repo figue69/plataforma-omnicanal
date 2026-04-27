@@ -314,6 +314,55 @@ def generate_suggestions(
             sources_for_badges.append(pr.get("source", "Proveedor"))
     sources_for_badges.append(f"CRM: {contact.get('nombre', 'cliente')}")
 
+    # Fusionar datos extraídos del caso (acumulados) con los del mensaje actual
+    case_extracted: Dict[str, Any] = case.get("extracted_data") or {}
+    merged_extracted: Dict[str, Any] = {**case_extracted, **{k: v for k, v in extracted.items() if v}}
+
+    # Historial de conversación (últimos 12 mensajes, resumido)
+    history: List[Dict[str, Any]] = []
+    if storage:
+        all_msgs = [m for m in storage.get("messages", []) if m.get("case_id") == case.get("id")]
+        for m in all_msgs[-12:]:
+            entry: Dict[str, Any] = {
+                "dir": m.get("direction"),
+                "ts": (m.get("ts") or "")[:16],
+                "text": (m.get("text") or "")[:400],
+            }
+            # Si es mensaje saliente, incluir la etiqueta de la sugerencia que usó
+            if m.get("direction") == "out" and m.get("based_on_suggestion_label"):
+                entry["sugerencia_usada"] = m["based_on_suggestion_label"]
+            history.append(entry)
+
+    # Resultados de proveedores — incluir opciones de vuelos de forma legible
+    provider_summary: List[Dict[str, Any]] = []
+    for pr in (provider_results or []):
+        entry_pr: Dict[str, Any] = {
+            "fuente": pr.get("source"),
+            "ok": pr.get("ok"),
+        }
+        opts = pr.get("options", [])
+        if opts:
+            entry_pr["opciones"] = [
+                {
+                    "aerolinea": o.get("airline") or (o.get("flight") or {}).get("airlines", [None])[0],
+                    "precio": o.get("total_price") or (o.get("flight") or {}).get("price"),
+                    "moneda": o.get("currency") or pr.get("currency"),
+                    "escalas": o.get("stops") if "stops" in o else (o.get("flight") or {}).get("stop_label"),
+                    "duracion": o.get("duration") or (o.get("flight") or {}).get("total_duration_fmt"),
+                    "label": o.get("label"),
+                    "fecha_salida": o.get("dep_date") or (o.get("flight") or {}).get("outbound_date"),
+                    "fecha_retorno": o.get("ret_date") or (o.get("flight") or {}).get("return_date"),
+                }
+                for o in opts[:5]
+            ]
+        provider_summary.append(entry_pr)
+
+    # Sugerencias previas (para que la IA sepa qué ya le mostró al agente)
+    prev_suggestions = [
+        {"label": s.get("label"), "body_snippet": (s.get("body") or "")[:200]}
+        for s in (case.get("last_suggestions") or [])
+    ]
+
     system = _build_suggestion_system_prompt(
         channel=channel,
         agent=agent,
@@ -322,23 +371,30 @@ def generate_suggestions(
     )
     user = json.dumps(
         {
-            "mensaje_cliente": message_text,
+            "mensaje_cliente_actual": message_text,
+            "historial_conversacion": history,
             "canal": channel,
             "clasificacion": classification,
-            "datos_extraidos": extracted,
+            "datos_extraidos_caso": merged_extracted,
             "caso": {
                 "id": case.get("id"),
                 "titulo": case.get("titulo"),
                 "stage": case.get("stage"),
                 "destino_principal": case.get("destino_principal"),
+                "urgency": case.get("urgency"),
                 "tags": case.get("tags", []),
             },
-            "resultados_proveedores": provider_results or [],
+            "resultados_proveedores": provider_summary,
+            "sugerencias_previas_mostradas": prev_suggestions,
             "instruccion": (
                 "Devolvé JSON con la clave 'suggestions' que es una lista de 2 o 3 objetos. "
                 "Cada objeto tiene: label (ej. 'Mejor tasa de cierre histórica', 'Más cálida', "
                 "'Más concisa'), body (el texto a enviar al cliente, listo para usar, respetando "
-                "la regla del canal), y rationale (1 frase de por qué esta opción)."
+                "la regla del canal), y rationale (1 frase de por qué esta opción). "
+                "IMPORTANTE: usá los datos de 'resultados_proveedores' y 'datos_extraidos_caso' "
+                "para dar información concreta. Si ya mostraste opciones de vuelos en "
+                "'sugerencias_previas_mostradas', podés referenciarlas. "
+                "NUNCA inventes precios ni disponibilidad que no estén en los resultados."
             ),
         },
         ensure_ascii=False,
@@ -395,10 +451,13 @@ def _build_suggestion_system_prompt(
         f"Reglas de tono/formato del canal: {json.dumps(channel_rule, ensure_ascii=False) if channel_rule else '(usar buenas prácticas estándar)'}",
         "",
         "### Reglas duras",
-        "- NUNCA inventes precios ni disponibilidad si no aparece en 'resultados_proveedores'. Si no hay datos, usá frases como 'estoy chequeando disponibilidad y te confirmo'.",
+        "- NUNCA inventes precios ni disponibilidad. Solo citá lo que aparece en 'resultados_proveedores'. Si no hay datos, usá 'estoy chequeando disponibilidad y te confirmo'.",
         "- Si el caso tiene una referencia de reserva, mencionala.",
         "- Respetá el tono del canal y las preferencias del agente y del cliente.",
         "- Generá 2 o 3 alternativas claramente distintas (no las hagas idénticas).",
+        "- Usá el 'historial_conversacion' para tener contexto de lo que ya se habló. Si el agente ya envió una sugerencia con opciones de vuelo, el cliente puede estar preguntando sobre esas opciones — referencialas.",
+        "- Usá 'datos_extraidos_caso' como la fuente de verdad de lo que se sabe del cliente (destinos, fechas, pax, presupuesto). Estos datos se acumulan a lo largo de la conversación.",
+        "- Si 'sugerencias_previas_mostradas' tiene contenido, tenelo en cuenta para no repetir exactamente lo mismo.",
     ]
     return "\n".join(parts)
 

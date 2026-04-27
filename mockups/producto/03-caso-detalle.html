@@ -126,8 +126,17 @@
           <input id="fl-ret" type="date" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
         </div>
         <div>
-          <label class="text-[10px] text-slate-500 font-medium">Pasajeros</label>
-          <input id="fl-adults" type="number" value="1" min="1" max="9" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+          <label class="text-[10px] text-slate-500 font-medium">Pax adultos</label>
+          <input id="fl-adults" type="number" value="2" min="1" max="9" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Cabina</label>
+          <select id="fl-cabin" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <option value="Y">Económica</option>
+            <option value="W">Premium Eco</option>
+            <option value="C">Business</option>
+            <option value="F">Primera</option>
+          </select>
         </div>
         <div>
           <label class="text-[10px] text-slate-500 font-medium">Moneda</label>
@@ -135,6 +144,13 @@
             <option value="USD">USD</option>
             <option value="ARS">ARS</option>
           </select>
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Niños / Infantes</label>
+          <div class="flex gap-1">
+            <input id="fl-children" type="number" value="0" min="0" max="8" placeholder="Niños" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+            <input id="fl-infants" type="number" value="0" min="0" max="4" placeholder="Infants" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+          </div>
         </div>
       </div>
 
@@ -151,8 +167,29 @@
       </div>
     </div>
 
-    <!-- Resultados -->
-    <div id="fl-results"></div>
+    <!-- Resultados Tourbo GDS -->
+    <div id="fl-tourbo-section" class="hidden">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">● Tourbo GDS</span>
+        <span class="text-[10px] text-slate-500">Tarifas reales — reservables</span>
+      </div>
+      <div id="fl-tourbo-results" class="space-y-2"></div>
+    </div>
+
+    <!-- Resultados Google Flights (referencia) -->
+    <div id="fl-google-section" class="hidden">
+      <div class="flex items-center gap-2 mb-2 mt-1">
+        <span class="text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">◎ Google Flights</span>
+        <span class="text-[10px] text-slate-500">Referencia de mercado · ±<span id="fl-flex-badge">3</span> días</span>
+      </div>
+      <div id="fl-results" class="space-y-2"></div>
+    </div>
+
+    <!-- Estado vacío inicial -->
+    <div id="fl-empty" class="text-xs text-slate-400 text-center py-8">
+      Completá destino y fecha, luego buscá.<br>
+      <span class="text-slate-300">Tourbo GDS + Google Flights en paralelo.</span>
+    </div>
   </div>
 
   <!-- Panel Ficha -->
@@ -504,12 +541,20 @@ document.getElementById('btn-custom').onclick = async ()=>{
 
 // Cerrar caso
 document.getElementById('btn-close-case').onclick = async ()=>{
-  if(!confirm('¿Cerrar este caso?')) return;
-  const storage_case = detail?.case;
-  if(storage_case){ storage_case.status='cerrado'; }
-  // No hay endpoint de cierre en el mockup — simular visualmente
-  document.getElementById('btn-close-case').textContent='Cerrado ✓';
-  document.getElementById('btn-close-case').disabled=true;
+  if(!confirm('¿Cerrar este caso? Desaparecerá del inbox.')) return;
+  const btn = document.getElementById('btn-close-case');
+  btn.disabled = true;
+  btn.textContent = 'Cerrando…';
+  try {
+    await api.put(`/cases/${caseId}/status`, { status: 'cerrado' });
+    btn.textContent = 'Cerrado ✓';
+    // Volver al inbox después de 1s
+    setTimeout(() => { window.location.href = '02-inbox.html'; }, 900);
+  } catch(e) {
+    btn.textContent = 'Error al cerrar';
+    btn.disabled = false;
+    console.error(e);
+  }
 };
 
 // ── Tags ─────────────────────────────────────────────────────────────────────
@@ -646,11 +691,6 @@ loadTags().then(()=>{ load(); });
 setInterval(load, 5000);
 
 // ── Panel Vuelos ──────────────────────────────────────────────────────────────
-document.getElementById('fl-flex').oninput = function(){
-  document.getElementById('fl-flex-label').textContent =
-    this.value === '0' ? 'Fecha exacta' : `±${this.value} días`;
-};
-
 // Pre-llenar campos con datos extraídos — solo la primera vez
 let flightFormPrefilled = false;
 function prefillFlightForm(extracted){
@@ -665,48 +705,170 @@ function prefillFlightForm(extracted){
   if(extracted.pax)           document.getElementById('fl-adults').value = extracted.pax;
 }
 
-// Almacena opciones para que insertFlightInReply las lea por índice
-let flightOptions = [];
+// ── Vuelos — estado ───────────────────────────────────────────────────────────
+let flightOptions = [];      // Google Flights opciones (por índice)
+let tourboOptions = [];      // Tourbo GDS opciones (por índice)
+
+document.getElementById('fl-flex').oninput = function(){
+  const v = this.value;
+  document.getElementById('fl-flex-label').textContent = v === '0' ? 'Fecha exacta' : `±${v} días`;
+  document.getElementById('fl-flex-badge').textContent = v;
+};
 
 document.getElementById('btn-fl-search').onclick = async () => {
-  const dest   = document.getElementById('fl-dest').value.trim();
-  const dep    = document.getElementById('fl-dep').value;
-  const ret    = document.getElementById('fl-ret').value;
-  const adults = parseInt(document.getElementById('fl-adults').value) || 1;
-  const curr   = document.getElementById('fl-currency').value;
-  const flex   = parseInt(document.getElementById('fl-flex').value);
-  const origin = document.getElementById('fl-origin').value.trim() || 'EZE';
+  const dest     = document.getElementById('fl-dest').value.trim();
+  const dep      = document.getElementById('fl-dep').value;
+  const ret      = document.getElementById('fl-ret').value;
+  const adults   = parseInt(document.getElementById('fl-adults').value) || 2;
+  const children = parseInt(document.getElementById('fl-children').value) || 0;
+  const infants  = parseInt(document.getElementById('fl-infants').value) || 0;
+  const cabin    = document.getElementById('fl-cabin').value;
+  const curr     = document.getElementById('fl-currency').value;
+  const flex     = parseInt(document.getElementById('fl-flex').value);
+  const origin   = document.getElementById('fl-origin').value.trim() || 'EZE';
 
   if(!dest || !dep){ alert('Completá destino y fecha de salida.'); return; }
 
   const btn = document.getElementById('btn-fl-search');
-  const res = document.getElementById('fl-results');
   btn.disabled = true;
   btn.textContent = 'Buscando…';
-  res.innerHTML = `<div class="text-xs text-slate-400 text-center py-6 animate-pulse">
-    Consultando Google Flights (${flex > 0 ? `hasta ${flex * 2 + 1} combinaciones` : '1 fecha'})…
-  </div>`;
 
-  try {
-    const data = await api.post('/search/flights', {
+  document.getElementById('fl-empty').classList.add('hidden');
+  document.getElementById('fl-tourbo-section').classList.add('hidden');
+  document.getElementById('fl-google-section').classList.add('hidden');
+  document.getElementById('fl-tourbo-results').innerHTML =
+    `<div class="text-xs text-slate-400 animate-pulse text-center py-3">Consultando Tourbo GDS…</div>`;
+  document.getElementById('fl-results').innerHTML =
+    `<div class="text-xs text-slate-400 animate-pulse text-center py-3">Consultando Google Flights…</div>`;
+  document.getElementById('fl-tourbo-section').classList.remove('hidden');
+  document.getElementById('fl-google-section').classList.remove('hidden');
+
+  // Lanzar ambas búsquedas en paralelo
+  const [tourboData, googleData] = await Promise.allSettled([
+    api.post('/search/tourbo', {
+      origin, destination: dest, dep_date: dep,
+      ret_date: ret || null, adults, children, infants, cabin,
+      currency: curr, case_id: caseId,
+    }),
+    api.post('/search/flights', {
       origin, destination: dest, dep_date: dep,
       ret_date: ret || null, adults, currency: curr,
       flex_days: flex, case_id: caseId,
-    });
-    renderFlightResults(data);
-  } catch(e) {
-    res.innerHTML = `<div class="text-xs text-red-600 bg-red-50 rounded-xl p-3">${e.message}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Buscar';
-  }
+    }),
+  ]);
+
+  // Renderizar Tourbo
+  const td = tourboData.status === 'fulfilled' ? tourboData.value : { ok: false, error: tourboData.reason?.message || 'Error' };
+  renderTourboResults(td, curr);
+
+  // Renderizar Google Flights
+  const gd = googleData.status === 'fulfilled' ? googleData.value : { ok: false, error: googleData.reason?.message || 'Error' };
+  renderGoogleResults(gd);
+
+  btn.disabled = false;
+  btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Buscar';
 };
 
-function renderFlightResults(data){
+// ── Tourbo GDS ────────────────────────────────────────────────────────────────
+
+function renderTourboResults(data, currency){
+  const res = document.getElementById('fl-tourbo-results');
+  if(!data.ok || !data.options?.length){
+    const msg = data.mocked ? 'Credenciales no configuradas — mostrando datos de demo' : (data.error || 'Sin resultados');
+    const isMock = data.source?.includes('mock');
+    res.innerHTML = `<div class="text-xs ${isMock?'text-amber-700 bg-amber-50 border-amber-200':'text-slate-500 bg-slate-50 border-slate-200'} rounded-xl p-3 border">
+      ${isMock ? '⚠ Demo: ' : ''}${msg}
+    </div>`;
+    if(data.options?.length === 0 && !data.ok) return;
+  }
+  const opts = data.options || [];
+  const curr = currency || data.currency || 'USD';
+  tourboOptions = opts.map(o => ({...o, curr}));
+  if(!tourboOptions.length){ res.innerHTML = `<div class="text-xs text-slate-400 text-center py-2">Sin disponibilidad en esta fecha.</div>`; return; }
+
+  const isMock = (data.source || '').includes('mock') || data.mocked;
+  res.innerHTML = tourboOptions.map((opt, idx) => {
+    const price = opt.total_price ? `${opt.currency || curr} ${opt.total_price.toLocaleString('es-AR')}` : '—';
+    const stops = opt.stops === 0 ? 'Directo' : `${opt.stops} escala${opt.stops > 1 ? 's' : ''}`;
+    const segs = (opt.segments||[]).map(s =>
+      `<div class="text-[10px] text-slate-500 ml-2">↳ ${s.airline||''} ${s.flight_number||''} · ${s.from||s.departure_airport||''} ${(s.dep_time||'').slice(11,16)} → ${s.to||s.arrival_airport||''} ${(s.arr_time||'').slice(11,16)}</div>`
+    ).join('');
+    const mockBadge = isMock ? `<span class="text-[9px] text-amber-600 bg-amber-50 px-1 rounded ml-1">demo</span>` : '';
+    return `<div class="bg-white rounded-xl border border-emerald-200 p-3 space-y-1.5">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold text-slate-800">${opt.airline || '—'}${mockBadge}</span>
+        <span class="text-[10px] text-slate-500">${stops} · ${opt.duration || '—'}</span>
+      </div>
+      <div class="text-[10px] text-slate-500">${opt.dep_time ? opt.dep_time.slice(0,16) : ''} → ${opt.arr_time ? opt.arr_time.slice(0,16) : ''}</div>
+      ${segs}
+      <div class="flex items-center justify-between pt-1">
+        <span class="text-sm font-bold text-emerald-700">${price}</span>
+        <span class="text-[10px] text-slate-400">total viaje</span>
+      </div>
+      <div class="flex gap-1.5 pt-1">
+        <button data-trb-idx="${idx}" class="trb-pricing-btn flex-1 text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-medium py-1 rounded-lg transition-colors border border-emerald-200">
+          Confirmar precio
+        </button>
+        <button data-trb-idx="${idx}" class="trb-insert-btn flex-1 text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium py-1 rounded-lg transition-colors">
+          Insertar en respuesta
+        </button>
+      </div>
+      <div class="trb-pricing-result-${idx} text-[10px] text-emerald-700 hidden"></div>
+    </div>`;
+  }).join('');
+
+  res.querySelectorAll('.trb-pricing-btn').forEach(btn => {
+    btn.onclick = () => confirmTourboPrice(parseInt(btn.dataset.trbIdx));
+  });
+  res.querySelectorAll('.trb-insert-btn').forEach(btn => {
+    btn.onclick = () => insertTourboInReply(parseInt(btn.dataset.trbIdx));
+  });
+}
+
+async function confirmTourboPrice(idx){
+  const opt = tourboOptions[idx];
+  if(!opt) return;
+  const pricingDiv = document.querySelector(`.trb-pricing-result-${idx}`);
+  pricingDiv.textContent = 'Consultando precio confirmado…';
+  pricingDiv.classList.remove('hidden');
+  try {
+    const data = await api.post(`/search/tourbo/${encodeURIComponent(opt.solution_id)}/pricing?pax_count=${encodeURIComponent(document.getElementById('fl-adults').value||2)}&currency=${encodeURIComponent(opt.curr||'USD')}`);
+    if(data.ok){
+      pricingDiv.innerHTML = `✓ Precio confirmado: <strong>${data.currency} ${(data.confirmed_price||0).toLocaleString('es-AR')}</strong>${data.mocked?' (demo)':''}`;
+    } else {
+      pricingDiv.textContent = `Error: ${data.error}`;
+      pricingDiv.classList.add('text-red-600');
+    }
+  } catch(e){
+    pricingDiv.textContent = `Error: ${e.message}`;
+    pricingDiv.classList.add('text-red-600');
+  }
+}
+
+function insertTourboInReply(idx){
+  const opt = tourboOptions[idx];
+  if(!opt) return;
+  const price = opt.total_price ? `${opt.currency || opt.curr || 'USD'} ${opt.total_price.toLocaleString('es-AR')}` : '—';
+  const stops = opt.stops === 0 ? 'Directo' : `${opt.stops} escala(s)`;
+  const text = [
+    `✈ ${opt.airline} — ${stops} · ${opt.duration || ''}`,
+    opt.dep_time ? `Salida: ${opt.dep_time.slice(0,16)}` : '',
+    `💰 ${price} (total viaje · Tourbo GDS)`,
+    opt.source?.includes('mock') ? '⚠ Precio de demo, pendiente confirmar con GDS real' : '',
+  ].filter(Boolean).join('\n');
+  const ta = document.getElementById('reply-body');
+  ta.value = ta.value ? ta.value + '\n\n' + text : text;
+  ta.focus();
+  document.querySelector('[data-panel="ai"]').click();
+}
+
+// ── Google Flights ─────────────────────────────────────────────────────────────
+
+function renderGoogleResults(data){
   const res = document.getElementById('fl-results');
   if(!data.ok || !data.options?.length){
     res.innerHTML = `<div class="text-xs text-slate-500 bg-slate-50 rounded-xl p-3 border border-slate-200">
-      Sin resultados. Verificá destino y fechas.<br>
+      Sin resultados Google Flights. Verificá destino y fechas.<br>
       <span class="text-slate-400">${data.error||''}</span>
     </div>`;
     return;
@@ -765,7 +927,7 @@ function insertFlightInReply(idx){
     `✈ ${(f.airlines||[]).join(' + ')} — ${depDate}${retDate}`,
     `${f.stop_label||''} · Duración total: ${f.total_duration_fmt||''}`,
     layText,
-    `💰 ${price}/pax${bagNote}`,
+    `💰 ${price}/pax${bagNote} (referencia Google Flights)`,
   ].filter(Boolean).join('\n');
   const ta = document.getElementById('reply-body');
   ta.value = ta.value ? ta.value + '\n\n' + text : text;

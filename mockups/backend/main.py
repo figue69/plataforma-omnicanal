@@ -165,6 +165,7 @@ def health() -> Dict[str, Any]:
         "ok": True,
         "ai_real": ai.USE_REAL,
         "tourbo_configured": tourbo_provider.is_configured(),
+        "tourbo_url": tourbo_provider.API_URL if tourbo_provider.is_configured() else None,
         "serpapi_configured": serpapi_provider.is_configured(),
         "whatsapp_configured": wa.is_configured(),
     }
@@ -370,11 +371,16 @@ def update_channel_rule(
 # ──────────────────────────────────────────────────────────────────────────────
 
 @app.get("/inbox")
-def get_inbox(_: str = Depends(auth.get_current_agent_id)) -> List[Dict[str, Any]]:
+def get_inbox(
+    include_closed: bool = False,
+    _: str = Depends(auth.get_current_agent_id),
+) -> List[Dict[str, Any]]:
     storage = db.load_storage()
     crm = db.load_crm()
     out: List[Dict[str, Any]] = []
     for case in storage.get("cases", []):
+        if not include_closed and case.get("status") == "cerrado":
+            continue
         msgs = messages_for_case(storage, case["id"])
         last = msgs[-1] if msgs else None
         contact = find_contact(crm, case.get("contact_id", "")) or {}
@@ -469,6 +475,26 @@ def update_case_extracted(
     return {"ok": True, "extracted_data": payload}
 
 
+@app.put("/cases/{case_id}/status")
+def update_case_status(
+    case_id: str,
+    payload: Dict[str, Any],
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Actualiza el status de un caso (abierto / cerrado / pendiente)."""
+    storage = db.load_storage()
+    case = find_case(storage, case_id)
+    if not case:
+        raise HTTPException(404, "Caso no encontrado")
+    new_status = payload.get("status", "cerrado")
+    case["status"] = new_status
+    case["updated_at"] = datetime.utcnow().isoformat()
+    if new_status == "cerrado":
+        case["closed_at"] = datetime.utcnow().isoformat()
+    db.save_storage(storage)
+    return {"ok": True, "case_id": case_id, "status": new_status}
+
+
 @app.post("/cases/{case_id}/mark_read")
 def mark_case_read(
     case_id: str, _: str = Depends(auth.get_current_agent_id)
@@ -555,16 +581,26 @@ def post_incoming_message(msg: IncomingMessage) -> Dict[str, Any]:
     }
     storage["messages"].append(stored_msg)
 
-    # Enriquecimiento por proveedores
+    # Enriquecimiento por proveedores (se dispara cuando hay destino + fecha)
     provider_results: List[Dict[str, Any]] = []
     destinos = extracted.get("destinos") or []
-    if destinos and classification.get("type") in {"cotizacion", "consulta", "reserva"}:
-        if tourbo_provider.is_configured():
-            provider_results.append(tourbo_provider.search_flights(destinos, extracted))
+    has_fecha = bool(
+        extracted.get("fecha_salida")
+        or extracted.get("fecha_aprox")
+        or extracted.get("fecha_retorno")
+    )
+    should_search = (
+        destinos
+        and classification.get("type") in {"cotizacion", "consulta", "reserva"}
+        and (has_fecha or classification.get("type") == "cotizacion")
+    )
+    if should_search:
+        # Tourbo GDS — tarifas reales (o mock) — tiene prioridad en el display
+        tourbo_result = tourbo_provider.search_flights(destinos, extracted)
+        provider_results.append(tourbo_result)
+        # SerpAPI Google Flights — referencia de precios y flexibilidad de fechas
         if serpapi_provider.is_configured():
             provider_results.append(serpapi_provider.search_flights(destinos, extracted))
-        if not provider_results:
-            provider_results.append(tourbo_provider.mock_flights(destinos, extracted))
 
     agent = db.get_agent_by_id(case.get("assigned_agent", "ag-ana")) or {}
     rule = channel_rules_mod.get_one(crm, msg.channel)
@@ -1104,7 +1140,7 @@ async def whatsapp_incoming(request: Request) -> Dict[str, Any]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Búsqueda de vuelos (Google Flights vía SerpAPI)
+# Búsqueda de vuelos — SerpAPI (Google Flights) + Tourbo (GDS real)
 # ──────────────────────────────────────────────────────────────────────────────
 
 class FlightSearchRequest(BaseModel):
@@ -1150,6 +1186,64 @@ def search_flights_endpoint(
             db.save_storage(storage)
 
     return result
+
+
+class TourboSearchRequest(BaseModel):
+    origin: str = "EZE"
+    destination: str
+    dep_date: str                       # YYYY-MM-DD
+    ret_date: Optional[str] = None
+    adults: int = 2
+    children: int = 0
+    infants: int = 0
+    cabin: str = "Y"                    # Y=Economy, C=Business, F=First
+    currency: str = "USD"
+    case_id: Optional[str] = None
+
+
+@app.post("/search/tourbo")
+def search_tourbo_endpoint(
+    req: TourboSearchRequest,
+    agent_id: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Busca vuelos en Tourbo/Flaptek GDS. Retorna tarifas reales (o mock si no hay credenciales)."""
+    dest_iata = serpapi_provider.resolve_airport(req.destination) or req.destination.upper()[:3]
+    origin_iata = serpapi_provider.resolve_airport(req.origin) or req.origin.upper()[:3]
+
+    result = tourbo_provider.avail(
+        origin=origin_iata,
+        destination=dest_iata,
+        dep_date=req.dep_date,
+        ret_date=req.ret_date,
+        adults=req.adults,
+        children=req.children,
+        infants=req.infants,
+        cabin=req.cabin,
+        currency=req.currency,
+    )
+
+    if req.case_id and result.get("ok"):
+        storage = db.load_storage()
+        case = find_case(storage, req.case_id)
+        if case:
+            pr = case.setdefault("last_provider_results", [])
+            pr[:] = [p for p in pr if p.get("source") not in ("Tourbo", "Tourbo (mock)")]
+            pr.append(result)
+            case["updated_at"] = datetime.utcnow().isoformat()
+            db.save_storage(storage)
+
+    return result
+
+
+@app.post("/search/tourbo/{solution_id}/pricing")
+def tourbo_pricing_endpoint(
+    solution_id: str,
+    pax_count: int = 2,
+    currency: str = "USD",
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Confirma precio de una solución Tourbo antes de reservar."""
+    return tourbo_provider.pricing(solution_id, pax_count, currency)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
