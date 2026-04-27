@@ -1088,6 +1088,55 @@ async def whatsapp_incoming(request: Request) -> Dict[str, Any]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Búsqueda de vuelos (Google Flights vía SerpAPI)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class FlightSearchRequest(BaseModel):
+    origin: str = "EZE"
+    destination: str
+    dep_date: str                       # YYYY-MM-DD
+    ret_date: Optional[str] = None      # None = ida simple
+    adults: int = 1
+    currency: str = "USD"               # USD o ARS
+    flex_days: int = 3                  # 0-3 días de flexibilidad hacia atrás
+    case_id: Optional[str] = None       # Si se provee, guarda resultado en el caso
+
+
+@app.post("/search/flights")
+def search_flights_endpoint(
+    req: FlightSearchRequest,
+    agent_id: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    # Resolver IATA si recibimos texto libre
+    dest_iata = serpapi_provider.resolve_airport(req.destination) or req.destination.upper()[:3]
+    origin_iata = serpapi_provider.resolve_airport(req.origin) or req.origin.upper()[:3]
+
+    result = serpapi_provider.search_flights_flexible(
+        origin=origin_iata,
+        destination=dest_iata,
+        dep_date=req.dep_date,
+        ret_date=req.ret_date,
+        adults=req.adults,
+        currency=req.currency,
+        flex_days=req.flex_days,
+    )
+
+    # Si viene con case_id guardamos el resultado en el caso para el contexto IA
+    if req.case_id and result.get("ok"):
+        storage = db.load_storage()
+        case = find_case(storage, req.case_id)
+        if case:
+            pr = case.setdefault("last_provider_results", [])
+            # Reemplazar resultado previo de SerpAPI si existe
+            pr[:] = [p for p in pr if p.get("source") != "SerpAPI/GoogleFlights"]
+            pr.append(result)
+            case["updated_at"] = datetime.utcnow().isoformat()
+            db.save_storage(storage)
+
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Diagnóstico WhatsApp
 # ──────────────────────────────────────────────────────────────────────────────
 

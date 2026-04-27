@@ -71,10 +71,11 @@
 <!-- Panel derecho: IA + Ficha -->
 <div class="w-80 bg-white border-l border-slate-200 flex flex-col h-screen flex-shrink-0 overflow-hidden">
   <!-- Tabs del panel -->
-  <div class="flex border-b border-slate-200 px-4 pt-3">
-    <button data-panel="ai" class="panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-blue-600 text-blue-600">Copiloto IA</button>
-    <button data-panel="ficha" class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-transparent text-slate-500">Ficha</button>
-    <button data-panel="datos" class="panel-tab text-xs font-semibold pb-2.5 ml-4 border-b-2 border-transparent text-slate-500">Datos</button>
+  <div class="flex border-b border-slate-200 px-4 pt-3 gap-3">
+    <button data-panel="ai"     class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-blue-600 text-blue-600">Copiloto IA</button>
+    <button data-panel="vuelos" class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-transparent text-slate-500">✈ Vuelos</button>
+    <button data-panel="ficha"  class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-transparent text-slate-500">Ficha</button>
+    <button data-panel="datos"  class="panel-tab text-xs font-semibold pb-2.5 border-b-2 border-transparent text-slate-500">Datos</button>
   </div>
 
   <!-- Panel IA -->
@@ -98,6 +99,60 @@
         Sin sugerencias aún. Llegará un mensaje del cliente para generarlas.
       </div>
     </div>
+  </div>
+
+  <!-- Panel Vuelos -->
+  <div id="panel-vuelos" class="flex-1 overflow-y-auto p-3 hidden space-y-3">
+
+    <!-- Formulario de búsqueda -->
+    <div class="bg-slate-50 rounded-xl border border-slate-200 p-3 space-y-2">
+      <div class="text-xs font-semibold text-slate-700">Buscar vuelos</div>
+
+      <div class="grid grid-cols-2 gap-2">
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Origen</label>
+          <input id="fl-origin" value="EZE" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Destino</label>
+          <input id="fl-dest" placeholder="Madrid, MIA…" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Salida</label>
+          <input id="fl-dep" type="date" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Retorno</label>
+          <input id="fl-ret" type="date" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Pasajeros</label>
+          <input id="fl-adults" type="number" value="1" min="1" max="9" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white" />
+        </div>
+        <div>
+          <label class="text-[10px] text-slate-500 font-medium">Moneda</label>
+          <select id="fl-currency" class="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+            <option value="USD">USD</option>
+            <option value="ARS">ARS</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-between pt-1">
+        <label class="text-[10px] text-slate-500 font-medium flex items-center gap-1.5">
+          <input id="fl-flex" type="range" min="0" max="3" value="3" class="w-20 accent-blue-600" />
+          <span id="fl-flex-label">±3 días</span>
+        </label>
+        <button id="btn-fl-search"
+          class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          Buscar
+        </button>
+      </div>
+    </div>
+
+    <!-- Resultados -->
+    <div id="fl-results"></div>
   </div>
 
   <!-- Panel Ficha -->
@@ -152,7 +207,7 @@ document.querySelectorAll('.panel-tab').forEach(b=>{
         ? 'panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-blue-600 text-blue-600'
         : 'panel-tab text-xs font-semibold pb-2.5 mr-4 border-b-2 border-transparent text-slate-500';
     });
-    ['ai','ficha','datos'].forEach(n=>{
+    ['ai','vuelos','ficha','datos'].forEach(n=>{
       document.getElementById('panel-'+n).classList.toggle('hidden', n!==p);
     });
   };
@@ -186,6 +241,9 @@ async function load(){
     if(inIframe) session.lastCaseId = caseId;
     await api.post('/cases/'+caseId+'/mark_read');
     render();
+    // Pre-llenar panel de vuelos con datos extraídos del caso
+    const extracted = detail.case?.extracted_data || {};
+    prefillFlightForm(extracted);
   } catch(e){ console.error(e); }
 }
 
@@ -455,5 +513,142 @@ render = function(){
 if(!inIframe) ui.wireHealth();
 loadTags().then(()=>{ load(); });
 setInterval(load, 5000);
+
+// ── Panel Vuelos ──────────────────────────────────────────────────────────────
+document.getElementById('fl-flex').oninput = function(){
+  document.getElementById('fl-flex-label').textContent =
+    this.value === '0' ? 'Fecha exacta' : `±${this.value} días`;
+};
+
+// Pre-llenar campos con datos extraídos del caso
+function prefillFlightForm(extracted){
+  if(!extracted) return;
+  if(extracted.destinos?.length)
+    document.getElementById('fl-dest').value = extracted.destinos[0];
+  if(extracted.fecha_salida)
+    document.getElementById('fl-dep').value = extracted.fecha_salida;
+  if(extracted.fecha_retorno)
+    document.getElementById('fl-ret').value = extracted.fecha_retorno;
+  if(extracted.pax)
+    document.getElementById('fl-adults').value = extracted.pax;
+}
+
+document.getElementById('btn-fl-search').onclick = async () => {
+  const dest   = document.getElementById('fl-dest').value.trim();
+  const dep    = document.getElementById('fl-dep').value;
+  const ret    = document.getElementById('fl-ret').value;
+  const adults = parseInt(document.getElementById('fl-adults').value) || 1;
+  const curr   = document.getElementById('fl-currency').value;
+  const flex   = parseInt(document.getElementById('fl-flex').value);
+  const origin = document.getElementById('fl-origin').value.trim() || 'EZE';
+
+  if(!dest || !dep){ alert('Completá destino y fecha de salida.'); return; }
+
+  const btn = document.getElementById('btn-fl-search');
+  const res = document.getElementById('fl-results');
+  btn.disabled = true;
+  btn.textContent = 'Buscando…';
+  res.innerHTML = `<div class="text-xs text-slate-400 text-center py-6 animate-pulse">
+    Consultando Google Flights (${flex > 0 ? `hasta ${flex * 2 + 1} combinaciones` : '1 fecha'})…
+  </div>`;
+
+  try {
+    const data = await api.post('/search/flights', {
+      origin, destination: dest, dep_date: dep,
+      ret_date: ret || null, adults, currency: curr,
+      flex_days: flex, case_id: caseId,
+    });
+    renderFlightResults(data);
+  } catch(e) {
+    res.innerHTML = `<div class="text-xs text-red-600 bg-red-50 rounded-xl p-3">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Buscar';
+  }
+};
+
+function renderFlightResults(data){
+  const res = document.getElementById('fl-results');
+  if(!data.ok || !data.options?.length){
+    res.innerHTML = `<div class="text-xs text-slate-500 bg-slate-50 rounded-xl p-3 border border-slate-200">
+      Sin resultados. Verificá destino y fechas.<br>
+      <span class="text-slate-400">${data.error||''}</span>
+    </div>`;
+    return;
+  }
+
+  const curr = data.currency || 'USD';
+  res.innerHTML = data.options.map(opt => {
+    const f = opt.flight;
+    const price = f.price ? `${curr} ${f.price.toLocaleString()}/pax` : '—';
+    const bagNote = opt.bags
+      ? `<span class="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded text-[10px] font-medium ml-1">+ valija</span>`
+      : `<span class="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] ml-1">solo carry-on</span>`;
+    const delta = opt.bag_delta
+      ? `<span class="text-slate-400 text-[10px]"> (+${curr} ${opt.bag_delta} vs sin valija)</span>` : '';
+
+    const depDate = f.outbound_date || '';
+    const retDate = f.return_date || '';
+    const dateStr = retDate ? `${depDate} → ${retDate}` : depDate;
+
+    const stops = f.stop_label || '';
+    const dur   = f.total_duration_fmt || '';
+    const airlines = (f.airlines||[]).join(' + ');
+
+    const layovers = (f.layovers||[]).map(l =>
+      `<div class="text-[10px] text-slate-500 ml-2">↳ Escala ${l.airport}: ${l.duration_fmt}${l.overnight?' (overnight)':''}</div>`
+    ).join('');
+
+    const segments = (f.segments||[]).map(s =>
+      `<div class="text-[10px] text-slate-600 ml-2">${s.airline} ${s.flight_number} · ${s.from} ${s.from_time?.slice(11,16)||''} → ${s.to} ${s.to_time?.slice(11,16)||''} (${s.duration_fmt})</div>`
+    ).join('');
+
+    return `<div class="bg-white rounded-xl border border-slate-200 p-3 space-y-1.5">
+      <div class="flex items-start justify-between gap-2">
+        <div class="text-[10px] font-semibold text-blue-700 leading-tight">${opt.label}</div>
+      </div>
+      <div class="text-xs font-medium text-slate-800">${dateStr}</div>
+      <div class="text-xs text-slate-600">${airlines} · ${stops} · ${dur}</div>
+      ${segments}
+      ${layovers}
+      <div class="text-xs font-semibold text-slate-900 pt-1">${price}${bagNote}${delta}</div>
+      <button onclick="insertFlightInReply(${JSON.stringify(JSON.stringify({opt, curr})).slice(1,-1)})"
+        class="w-full text-[11px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium py-1 rounded-lg transition-colors mt-1">
+        Insertar en respuesta
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function insertFlightInReply(jsonStr){
+  try {
+    const {opt, curr} = JSON.parse(jsonStr);
+    const f = opt.flight;
+    const price = f.price ? `${curr} ${f.price.toLocaleString()}` : '—';
+    const bagNote = opt.bags ? ' (incluye 1 valija 23kg)' : ' (solo carry-on)';
+    const depDate = f.outbound_date || '';
+    const retDate = f.return_date ? ` → retorno ${f.return_date}` : '';
+    const airlines = (f.airlines||[]).join(' + ');
+    const stops = f.stop_label || '';
+    const dur = f.total_duration_fmt || '';
+
+    const layText = (f.layovers||[]).map(l =>
+      `• Escala en ${l.airport} (${l.duration_fmt})`
+    ).join('\n');
+
+    const text = [
+      `✈ ${airlines} — ${depDate}${retDate}`,
+      `${stops} · Duración: ${dur}`,
+      layText,
+      `💰 ${price}/pax${bagNote}`,
+    ].filter(Boolean).join('\n');
+
+    const ta = document.getElementById('reply-body');
+    ta.value = ta.value ? ta.value + '\n\n' + text : text;
+    ta.focus();
+    // Volver al tab de respuesta
+    document.querySelector('[data-panel="ai"]').click();
+  } catch(e){ console.error(e); }
+}
 </script>
 </body></html>
