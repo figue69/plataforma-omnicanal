@@ -453,6 +453,22 @@ def regenerate_suggestions(
     return {"ok": True, "suggestions": suggestions}
 
 
+@app.put("/cases/{case_id}/extracted")
+def update_case_extracted(
+    case_id: str,
+    payload: Dict[str, Any],
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    storage = db.load_storage()
+    case = find_case(storage, case_id)
+    if not case:
+        raise HTTPException(404, "Caso no encontrado")
+    case["extracted_data"] = payload
+    case["updated_at"] = datetime.utcnow().isoformat()
+    db.save_storage(storage)
+    return {"ok": True, "extracted_data": payload}
+
+
 @app.post("/cases/{case_id}/mark_read")
 def mark_case_read(
     case_id: str, _: str = Depends(auth.get_current_agent_id)
