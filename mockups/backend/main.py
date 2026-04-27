@@ -33,7 +33,9 @@ import channel_rules as channel_rules_mod
 import db
 import reminders as reminders_mod
 import tuning as tuning_mod
+from providers import gmail as gmail_provider
 from providers import serpapi as serpapi_provider
+from providers import telegram_bot as tg_provider
 from providers import tourbo as tourbo_provider
 from providers import whatsapp as wa
 
@@ -123,6 +125,21 @@ class NewContactPayload(BaseModel):
     whatsapp: Optional[str] = None
     contacto_principal: Optional[str] = None
     idioma: str = "es"
+
+
+class ChannelCreatePayload(BaseModel):
+    type: str                           # "gmail" | "telegram" | "whatsapp"
+    name: str                           # nombre descriptivo, ej. "Ventas Principal"
+    assigned_agents: List[str] = []
+    # Gmail
+    bot_token: Optional[str] = None     # Telegram
+    # WhatsApp usa env vars globales por ahora
+
+
+class ChannelUpdatePayload(BaseModel):
+    name: Optional[str] = None
+    assigned_agents: Optional[List[str]] = None
+    active: Optional[bool] = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -682,29 +699,68 @@ def post_reply(
         "edited_from_ai": payload.edited_from_ai,
     }
 
-    # Envío real por WhatsApp si el canal es whatsapp y tenemos el número del contacto
-    wa_result = None
-    if channel == "whatsapp" and wa.is_configured():
-        crm = db.load_crm()
-        contact = find_contact(crm, case.get("contact_id", ""))
-        phone = (contact or {}).get("whatsapp", "")
-        if phone:
-            wa_result = wa.send_text(phone, payload.body)
-            out_msg["wa_send_result"] = wa_result
+    crm = db.load_crm()
+    contact = find_contact(crm, case.get("contact_id", ""))
+
+    send_result = None
+
+    if channel == "whatsapp":
+        if wa.is_configured():
+            phone = (contact or {}).get("whatsapp", "")
+            if phone:
+                send_result = wa.send_text(phone, payload.body)
+            else:
+                send_result = {"ok": False, "error": f"Contacto {case.get('contact_id')} no tiene número de WhatsApp"}
         else:
-            wa_result = {"ok": False, "error": f"Contacto {case.get('contact_id')} no tiene número de WhatsApp registrado"}
-    elif channel == "whatsapp" and not wa.is_configured():
-        wa_result = {"ok": False, "error": "WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurados"}
+            send_result = {"ok": False, "error": "WHATSAPP_TOKEN o WHATSAPP_PHONE_NUMBER_ID no configurados"}
+
+    elif channel == "gmail":
+        channel_id = case.get("channel_id") or (last_in or {}).get("channel_id")
+        ch_obj = _find_channel(crm, channel_id) if channel_id else None
+        if ch_obj and ch_obj.get("type") == "gmail" and ch_obj.get("credentials"):
+            to_email = (contact or {}).get("email", "")
+            subject = case.get("subject", "(sin asunto)")
+            thread_id = (last_in or {}).get("gmail_thread_id")
+            reply_msg_id = (last_in or {}).get("gmail_message_id")
+            if to_email:
+                send_result = gmail_provider.send_reply(
+                    ch_obj, to_email, subject, payload.body,
+                    thread_id=thread_id, reply_to_message_id=reply_msg_id,
+                )
+                # Persist updated token if refreshed
+                db.save_crm(crm)
+            else:
+                send_result = {"ok": False, "error": "Contacto sin email registrado"}
+        else:
+            send_result = {"ok": False, "error": "Canal Gmail no configurado o sin credenciales OAuth"}
+
+    elif channel == "telegram":
+        channel_id = case.get("channel_id") or (last_in or {}).get("channel_id")
+        ch_obj = _find_channel(crm, channel_id) if channel_id else None
+        if ch_obj and ch_obj.get("type") == "telegram" and ch_obj.get("bot_token"):
+            tg_chat_id = (last_in or {}).get("tg_chat_id") or case.get("tg_chat_id")
+            reply_to = (last_in or {}).get("tg_message_id")
+            if tg_chat_id:
+                send_result = tg_provider.send_message(
+                    ch_obj["bot_token"], tg_chat_id, payload.body,
+                    reply_to_message_id=reply_to,
+                )
+            else:
+                send_result = {"ok": False, "error": "No se encontró tg_chat_id para este caso"}
+        else:
+            send_result = {"ok": False, "error": "Canal Telegram no configurado"}
+
+    if send_result:
+        out_msg["send_result"] = send_result
 
     storage["messages"].append(out_msg)
     case["updated_at"] = datetime.utcnow().isoformat()
     db.save_storage(storage)
 
-    # Si el envío falló, devolver igualmente el mensaje guardado pero con error explícito
-    if wa_result and not wa_result.get("ok"):
-        return {"ok": False, "message": out_msg, "wa_result": wa_result, "error": wa_result.get("error")}
+    if send_result and not send_result.get("ok"):
+        return {"ok": False, "message": out_msg, "send_result": send_result, "error": send_result.get("error")}
 
-    return {"ok": True, "message": out_msg, "wa_result": wa_result}
+    return {"ok": True, "message": out_msg, "send_result": send_result}
 
 
 @app.get("/messages")
@@ -1137,6 +1193,495 @@ async def whatsapp_incoming(request: Request) -> Dict[str, Any]:
     db.save_storage(storage)
 
     return {"ok": True, "case_id": case["id"], "message_id": message_id}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Canales (Gmail · Telegram · WhatsApp) — CRUD + OAuth + Webhooks
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _find_channel(crm: Dict[str, Any], channel_id: str) -> Optional[Dict[str, Any]]:
+    return next((c for c in crm.get("channels", []) if c["id"] == channel_id), None)
+
+
+@app.get("/channels")
+def list_channels(_: str = Depends(auth.get_current_agent_id)) -> List[Dict[str, Any]]:
+    """Lista todos los canales configurados (sin tokens/secrets)."""
+    crm = db.load_crm()
+    return [_safe_channel(c) for c in crm.get("channels", [])]
+
+
+@app.post("/channels")
+def create_channel(
+    payload: ChannelCreatePayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    crm = db.load_crm()
+    channel_id = f"ch-{uuid.uuid4().hex[:8]}"
+    channel: Dict[str, Any] = {
+        "id": channel_id,
+        "type": payload.type,
+        "name": payload.name,
+        "active": True,
+        "assigned_agents": payload.assigned_agents,
+        "created_at": datetime.utcnow().isoformat(),
+        "credentials": {},
+    }
+    if payload.type == "telegram":
+        if not payload.bot_token:
+            raise HTTPException(400, "bot_token requerido para canales Telegram")
+        info = tg_provider.is_token_valid(payload.bot_token)
+        if not info.get("ok"):
+            raise HTTPException(400, f"Token Telegram inválido: {info.get('error')}")
+        channel["bot_token"]     = payload.bot_token
+        channel["bot_username"]  = info.get("bot_username", "")
+        channel["bot_name"]      = info.get("bot_name", "")
+        channel["webhook_registered"] = False
+
+    elif payload.type == "whatsapp":
+        # WhatsApp usa las env vars globales; solo registramos el canal lógico
+        channel["phone_number_id"] = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+        channel["email_address"]   = ""
+
+    crm.setdefault("channels", []).append(channel)
+    db.save_crm(crm)
+    return _safe_channel(channel)
+
+
+@app.put("/channels/{channel_id}")
+def update_channel(
+    channel_id: str,
+    payload: ChannelUpdatePayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    crm = db.load_crm()
+    ch = _find_channel(crm, channel_id)
+    if not ch:
+        raise HTTPException(404, "Canal no encontrado")
+    if payload.name is not None:
+        ch["name"] = payload.name
+    if payload.assigned_agents is not None:
+        ch["assigned_agents"] = payload.assigned_agents
+    if payload.active is not None:
+        ch["active"] = payload.active
+    db.save_crm(crm)
+    return _safe_channel(ch)
+
+
+@app.delete("/channels/{channel_id}")
+def delete_channel(
+    channel_id: str,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    crm = db.load_crm()
+    ch = _find_channel(crm, channel_id)
+    if not ch:
+        raise HTTPException(404, "Canal no encontrado")
+    # Limpiar webhook Telegram si existía
+    if ch.get("type") == "telegram" and ch.get("bot_token") and ch.get("webhook_registered"):
+        tg_provider.delete_webhook(ch["bot_token"])
+    crm["channels"] = [c for c in crm["channels"] if c["id"] != channel_id]
+    db.save_crm(crm)
+    return {"ok": True}
+
+
+def _safe_channel(ch: Dict[str, Any]) -> Dict[str, Any]:
+    """Devuelve el canal sin exponer tokens ni credenciales, con flags de estado."""
+    safe = {k: v for k, v in ch.items() if k not in ("bot_token", "credentials")}
+    safe["credentials_ok"] = bool(ch.get("credentials", {}).get("access_token"))
+    safe["webhook_ok"] = bool(ch.get("webhook_registered"))
+    return safe
+
+
+# ── Gmail OAuth ───────────────────────────────────────────────────────────────
+
+from fastapi.responses import RedirectResponse as _Redirect, HTMLResponse as _HTML
+
+
+@app.get("/channels/{channel_id}/gmail/auth")
+def gmail_auth_start(
+    channel_id: str,
+    _: str = Depends(auth.get_current_agent_id),
+):
+    """Redirige al consent de Google OAuth2 para conectar una casilla Gmail."""
+    crm = db.load_crm()
+    ch = _find_channel(crm, channel_id)
+    if not ch or ch.get("type") != "gmail":
+        raise HTTPException(404, "Canal Gmail no encontrado")
+    if not gmail_provider.is_configured():
+        raise HTTPException(400, "GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET no configurados")
+    url = gmail_provider.get_auth_url(channel_id)
+    return _Redirect(url)
+
+
+@app.get("/channels/gmail/callback", response_class=_HTML)
+def gmail_oauth_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    """Callback OAuth2 de Google. Recibe el code, intercambia por tokens y los guarda."""
+    if error:
+        return _HTML(f"<h2>Error OAuth: {error}</h2><p>Cerrá esta ventana y reintentá.</p>")
+    if not code or not state:
+        return _HTML("<h2>Parámetros faltantes</h2>")
+
+    try:
+        tokens = gmail_provider.exchange_code(code)
+    except Exception as exc:
+        return _HTML(f"<h2>Error al intercambiar code: {exc}</h2>")
+
+    crm = db.load_crm()
+    ch = _find_channel(crm, state)
+    if not ch:
+        return _HTML(f"<h2>Canal {state} no encontrado</h2>")
+
+    import time as _time
+    ch["credentials"] = {
+        "access_token":  tokens.get("access_token"),
+        "refresh_token": tokens.get("refresh_token"),
+        "token_expiry":  _time.time() + tokens.get("expires_in", 3600),
+    }
+    # Obtener email del usuario
+    try:
+        email_addr = gmail_provider.get_email_address(ch)
+        ch["email_address"] = email_addr
+    except Exception:
+        pass
+    ch["oauth_connected"] = True
+    db.save_crm(crm)
+
+    return _HTML("""
+        <html><body style="font-family:system-ui;text-align:center;padding:60px">
+        <h2 style="color:#16a34a">✓ Gmail conectado correctamente</h2>
+        <p>Podés cerrar esta ventana. La casilla ya aparece activa en el panel de canales.</p>
+        <script>setTimeout(()=>window.close(),3000)</script>
+        </body></html>
+    """)
+
+
+# ── Gmail polling ─────────────────────────────────────────────────────────────
+
+@app.post("/poll/gmail")
+def poll_gmail_channels(
+    channel_id: Optional[str] = None,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """
+    Consulta los emails no leídos de todos los canales Gmail activos
+    (o solo uno si se especifica channel_id) y los procesa como mensajes entrantes.
+    """
+    crm = db.load_crm()
+    channels = crm.get("channels", [])
+    targets = [c for c in channels
+               if c.get("type") == "gmail" and c.get("active") and c.get("oauth_connected")
+               and (channel_id is None or c["id"] == channel_id)]
+
+    if not targets:
+        return {"ok": True, "processed": 0, "message": "Sin canales Gmail activos con OAuth conectado"}
+
+    total = 0
+    results: List[Dict[str, Any]] = []
+    for ch in targets:
+        try:
+            emails = gmail_provider.poll_unread(ch)
+            for em in emails:
+                if em.get("error"):
+                    results.append({"channel": ch["id"], "error": em["error"]})
+                    continue
+                r = _process_incoming_email(em, ch, crm)
+                results.append({"channel": ch["id"], "case_id": r.get("case_id"), "ok": r.get("ok")})
+                total += 1
+        except Exception as exc:
+            results.append({"channel": ch["id"], "error": str(exc)})
+
+    db.save_crm(crm)  # Actualiza last_poll en los canales
+    return {"ok": True, "processed": total, "results": results}
+
+
+def _process_incoming_email(
+    email_data: Dict[str, Any],
+    channel: Dict[str, Any],
+    crm: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Procesa un email entrante por el mismo pipeline que los mensajes WhatsApp."""
+    from_email = email_data.get("from_email", "")
+    from_name  = email_data.get("from_name", from_email)
+    subject    = email_data.get("subject", "")
+    body       = email_data.get("body_plain", "")
+    thread_id  = email_data.get("gmail_thread_id")
+
+    storage = db.load_storage()
+
+    # Buscar contacto por email
+    contact = None
+    for a in crm.get("agencias", []) + crm.get("pasajeros", []):
+        if (a.get("email") or "").lower() == from_email.lower():
+            contact = a
+            break
+
+    # Crear contacto genérico si no existe
+    if not contact:
+        new_id = f"px-{uuid.uuid4().hex[:8]}"
+        contact = {
+            "id": new_id, "tipo": "pasajero",
+            "nombre": from_name, "email": from_email,
+            "whatsapp": "", "idioma": "es",
+            "system_prompt": "", "historial_viajes": [],
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        crm.setdefault("pasajeros", []).append(contact)
+
+    # Pipeline IA
+    full_text  = f"Asunto: {subject}\n\n{body}" if subject else body
+    classification = ai.classify_message(full_text, "email", storage)
+    extracted  = ai.extract_structured(full_text, storage)
+
+    open_cases = open_cases_for_contact(storage, contact["id"])
+    # Buscar también por gmail_thread_id para continuar el hilo
+    case = next((c for c in open_cases if c.get("gmail_thread_id") == thread_id), None)
+    case_id = case["id"] if case else None
+    match_reason = "gmail_thread" if case else None
+
+    if not case_id:
+        case_id, match_reason = ai.match_message_to_case(
+            text=full_text, contact=contact,
+            open_cases=open_cases, extracted=extracted, storage=storage,
+        )
+
+    if not case_id:
+        case = {
+            "id": f"c-{uuid.uuid4().hex[:8]}",
+            "contact_id": contact["id"],
+            "contact_type": contact.get("tipo", "pasajero"),
+            "titulo": _build_case_title(contact, extracted, classification),
+            "destino_principal": (extracted.get("destinos") or [None])[0],
+            "tags": [], "stage": "consulta", "status": "abierto",
+            "assigned_agent": _first_assigned_agent(channel),
+            "urgency": "alta" if classification.get("severity") == "critica" else "normal",
+            "gmail_thread_id": thread_id,
+            "channel_id": channel["id"],
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "extracted_data": {k: v for k, v in extracted.items() if k != "mocked"},
+        }
+        storage["cases"].append(case)
+    else:
+        case = find_case(storage, case_id)
+        case["updated_at"] = datetime.utcnow().isoformat()
+        if not case.get("gmail_thread_id") and thread_id:
+            case["gmail_thread_id"] = thread_id
+
+    msg_id = f"m-{uuid.uuid4().hex[:10]}"
+    storage["messages"].append({
+        "id": msg_id,
+        "case_id": case["id"],
+        "contact_id": contact["id"],
+        "direction": "in", "channel": "email",
+        "channel_id": channel["id"],
+        "subject": subject,
+        "text": full_text,
+        "attachments": email_data.get("attachments", []),
+        "ts": email_data.get("ts") or datetime.utcnow().isoformat(),
+        "read": False,
+        "classification": classification,
+        "extracted": extracted,
+        "gmail_message_id": email_data.get("gmail_message_id"),
+        "gmail_thread_id": thread_id,
+    })
+
+    # Enriquecimiento + sugerencias
+    provider_results: List[Dict[str, Any]] = []
+    destinos = extracted.get("destinos") or []
+    if destinos and classification.get("type") in {"cotizacion", "consulta", "reserva"}:
+        provider_results.append(tourbo_provider.search_flights(destinos, extracted))
+        if serpapi_provider.is_configured():
+            provider_results.append(serpapi_provider.search_flights(destinos, extracted))
+
+    agent = db.get_agent_by_id(case.get("assigned_agent", "")) or {}
+    rule  = channel_rules_mod.get_one(crm, "email")
+    suggestions = ai.generate_suggestions(
+        message_text=full_text, channel="email",
+        case=case, contact=contact, agent=agent,
+        extracted=extracted, classification=classification,
+        provider_results=provider_results, channel_rule=rule, storage=storage,
+    )
+    case["last_suggestions"] = suggestions
+    case["last_provider_results"] = provider_results
+    db.save_storage(storage)
+
+    return {"ok": True, "case_id": case["id"], "message_id": msg_id}
+
+
+def _first_assigned_agent(channel: Dict[str, Any]) -> str:
+    agents = channel.get("assigned_agents", [])
+    return agents[0] if agents else "ag-ana"
+
+
+# ── Telegram token validation (pre-create) ────────────────────────────────────
+
+class TgValidatePayload(BaseModel):
+    bot_token: str
+
+
+@app.post("/channels/telegram/validate-token")
+def validate_tg_token(
+    payload: TgValidatePayload,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Verifica que el bot token sea válido antes de crear el canal."""
+    return tg_provider.is_token_valid(payload.bot_token)
+
+
+# ── Telegram Webhook ──────────────────────────────────────────────────────────
+
+@app.post("/channels/{channel_id}/telegram/register-webhook")
+def register_tg_webhook(
+    channel_id: str,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    """Registra el webhook en Telegram para este canal bot."""
+    crm = db.load_crm()
+    ch = _find_channel(crm, channel_id)
+    if not ch or ch.get("type") != "telegram":
+        raise HTTPException(404, "Canal Telegram no encontrado")
+    result = tg_provider.register_webhook(ch["bot_token"], channel_id)
+    if result.get("ok"):
+        ch["webhook_registered"] = True
+        ch["webhook_url"] = result["webhook_url"]
+        db.save_crm(crm)
+    return result
+
+
+@app.get("/channels/{channel_id}/telegram/webhook-info")
+def tg_webhook_info(
+    channel_id: str,
+    _: str = Depends(auth.get_current_agent_id),
+) -> Dict[str, Any]:
+    crm = db.load_crm()
+    ch = _find_channel(crm, channel_id)
+    if not ch or ch.get("type") != "telegram":
+        raise HTTPException(404, "Canal Telegram no encontrado")
+    return tg_provider.get_webhook_info(ch["bot_token"])
+
+
+@app.post("/webhook/telegram/{channel_id}")
+async def telegram_incoming(channel_id: str, request: Request) -> Dict[str, Any]:
+    """Recibe updates de Telegram para el bot del canal indicado."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "Payload inválido")
+
+    crm = db.load_crm()
+    ch  = _find_channel(crm, channel_id)
+    if not ch or not ch.get("active"):
+        return {"ok": True, "skipped": True}  # responder 200 siempre a Telegram
+
+    parsed = tg_provider.parse_update(body)
+    if not parsed:
+        return {"ok": True, "skipped": True}
+
+    storage = db.load_storage()
+
+    # Identificar/crear contacto por tg_user_id
+    tg_user_id = str(parsed.get("tg_user_id", ""))
+    contact = None
+    for p in crm.get("pasajeros", []):
+        if p.get("telegram_user_id") == tg_user_id:
+            contact = p
+            break
+
+    if not contact:
+        new_id = f"px-{uuid.uuid4().hex[:8]}"
+        contact = {
+            "id": new_id, "tipo": "pasajero",
+            "nombre": parsed["from_name"],
+            "telegram_user_id": tg_user_id,
+            "telegram_username": parsed.get("from_username", ""),
+            "telegram_chat_id": parsed.get("tg_chat_id"),
+            "email": "", "whatsapp": "", "idioma": "es",
+            "system_prompt": "", "historial_viajes": [],
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        crm.setdefault("pasajeros", []).append(contact)
+
+    text = parsed["text"]
+    classification = ai.classify_message(text, "telegram", storage)
+    extracted = ai.extract_structured(text, storage)
+
+    open_cases = open_cases_for_contact(storage, contact["id"])
+    # Continuar por chat_id
+    tg_chat_id = str(parsed.get("tg_chat_id", ""))
+    case = next((c for c in open_cases if str(c.get("tg_chat_id", "")) == tg_chat_id), None)
+    case_id = case["id"] if case else None
+
+    if not case_id:
+        case_id, match_reason = ai.match_message_to_case(
+            text=text, contact=contact,
+            open_cases=open_cases, extracted=extracted, storage=storage,
+        )
+    else:
+        match_reason = "tg_chat"
+
+    if not case_id:
+        case = {
+            "id": f"c-{uuid.uuid4().hex[:8]}",
+            "contact_id": contact["id"],
+            "contact_type": "pasajero",
+            "titulo": _build_case_title(contact, extracted, classification),
+            "destino_principal": (extracted.get("destinos") or [None])[0],
+            "tags": [], "stage": "consulta", "status": "abierto",
+            "assigned_agent": _first_assigned_agent(ch),
+            "urgency": "alta" if classification.get("severity") == "critica" else "normal",
+            "tg_chat_id": tg_chat_id,
+            "channel_id": channel_id,
+            "created_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.utcnow().isoformat(),
+            "extracted_data": {k: v for k, v in extracted.items() if k != "mocked"},
+        }
+        storage["cases"].append(case)
+    else:
+        case = find_case(storage, case_id)
+        case["updated_at"] = datetime.utcnow().isoformat()
+        if not case.get("tg_chat_id"):
+            case["tg_chat_id"] = tg_chat_id
+
+    msg_id = f"m-{uuid.uuid4().hex[:10]}"
+    storage["messages"].append({
+        "id": msg_id,
+        "case_id": case["id"],
+        "contact_id": contact["id"],
+        "direction": "in", "channel": "telegram",
+        "channel_id": channel_id,
+        "text": text,
+        "attachments": [],
+        "ts": datetime.utcnow().isoformat(),
+        "read": False,
+        "classification": classification,
+        "extracted": extracted,
+        "tg_update_id": parsed.get("tg_update_id"),
+        "tg_chat_id": tg_chat_id,
+    })
+
+    # Sugerencias
+    agent = db.get_agent_by_id(case.get("assigned_agent", "")) or {}
+    rule  = channel_rules_mod.get_one(crm, "telegram")
+    suggestions = ai.generate_suggestions(
+        message_text=text, channel="telegram",
+        case=case, contact=contact, agent=agent,
+        extracted=extracted, classification=classification,
+        provider_results=[], channel_rule=rule, storage=storage,
+    )
+    case["last_suggestions"] = suggestions
+    db.save_storage(storage)
+    db.save_crm(crm)
+
+    return {"ok": True, "case_id": case["id"]}
+
+
+# ── Reply por canal (update del endpoint existente) ───────────────────────────
+# El endpoint /cases/{case_id}/reply ya existente maneja WA.
+# Para email y telegram, extendemos la lógica dentro del mismo endpoint.
 
 
 # ──────────────────────────────────────────────────────────────────────────────

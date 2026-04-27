@@ -30,30 +30,105 @@
 
     <!-- Tab: Canales -->
     <div id="tab-canales" class="max-w-2xl space-y-4">
-      <p class="text-xs text-slate-500">Canales conectados al workspace. En producción: Gmail API + WhatsApp BSP. En el mockup los mensajes entran desde el simulador de cliente.</p>
-      <div class="space-y-3">
-        ${[
-          {nombre:'WhatsApp Business', estado:'mock', icon:'💬', desc:'Número: +54 9 11 0000-0000 · BSP: pendiente de configurar'},
-          {nombre:'Email (Gmail)', estado:'mock', icon:'✉️', desc:'Cuenta: ventas@empresa.com.ar · OAuth: pendiente'},
-          {nombre:'Instagram DM', estado:'no_conectado', icon:'📷', desc:'Sin cuenta conectada'},
-          {nombre:'Telegram', estado:'no_conectado', icon:'✈️', desc:'Sin bot configurado'},
-        ].map(c=>`
-          <div class="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <span class="text-2xl">${c.icon}</span>
-              <div>
-                <div class="font-semibold">${c.nombre}</div>
-                <div class="text-xs text-slate-500">${c.desc}</div>
-              </div>
-            </div>
-            <span class="text-xs font-medium px-2.5 py-1 rounded-full ${c.estado==='mock'?'bg-amber-100 text-amber-700':c.estado==='conectado'?'bg-green-100 text-green-700':'bg-slate-100 text-slate-500'}">${
-              {mock:'Mock activo',conectado:'Conectado',no_conectado:'No conectado'}[c.estado]
-            }</span>
-          </div>`).join('')}
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-slate-500">Canales conectados al workspace (Gmail + Telegram). Los mensajes de WhatsApp e Instagram se suman en el prototipo.</p>
+        <button onclick="openAddChannelModal()" class="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-slate-700">+ Agregar canal</button>
+      </div>
+      <div id="channels-list" class="space-y-3">
+        <div class="text-xs text-slate-400 py-4 text-center">Cargando canales...</div>
       </div>
       <div class="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
         <b>wa.me deep link:</b> En lugar de iniciar conversaciones salientes (que requieren templates Meta), publicamos
         <code>https://wa.me/&lt;nro&gt;?text=Hola</code> en el sitio web y emails. El cliente inicia él la conversación y abrimos la ventana de 24 hs gratis.
+      </div>
+    </div>
+
+    <!-- Modal: Agregar canal -->
+    <div id="modal-add-channel" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="font-semibold text-slate-900">Agregar canal</h2>
+          <button onclick="closeAddChannelModal()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        </div>
+
+        <!-- Paso 1: tipo -->
+        <div id="add-step-type">
+          <p class="text-xs text-slate-500 mb-3">Elegí el tipo de canal a conectar:</p>
+          <div class="grid grid-cols-2 gap-3">
+            <button onclick="selectChannelType('gmail')" class="border-2 border-slate-200 hover:border-blue-500 rounded-xl p-4 text-center transition-colors">
+              <div class="text-2xl mb-1">✉️</div>
+              <div class="font-semibold text-sm">Gmail</div>
+              <div class="text-xs text-slate-500 mt-0.5">OAuth2 · casilla propia</div>
+            </button>
+            <button onclick="selectChannelType('telegram')" class="border-2 border-slate-200 hover:border-blue-500 rounded-xl p-4 text-center transition-colors">
+              <div class="text-2xl mb-1">✈️</div>
+              <div class="font-semibold text-sm">Telegram</div>
+              <div class="text-xs text-slate-500 mt-0.5">Bot token · webhook</div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Paso 2a: Gmail -->
+        <div id="add-step-gmail" class="hidden space-y-3">
+          <div>
+            <label class="text-xs font-medium text-slate-700 block mb-1">Nombre descriptivo del canal</label>
+            <input id="gmail-channel-name" placeholder="Ej: ventas@empresa.com.ar" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div id="gmail-agents-section" class="hidden">
+            <label class="text-xs font-medium text-slate-700 block mb-1">Asignar agentes</label>
+            <div id="gmail-agents-list" class="space-y-1 max-h-36 overflow-y-auto border border-slate-200 rounded-lg p-2"></div>
+          </div>
+          <div class="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 text-xs text-blue-700">
+            Al hacer clic en <b>Conectar con Google</b> serás redirigido a la pantalla de autorización OAuth2 de Google. Se solicitarán permisos de lectura, envío y modificación de Gmail.
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="backToType()" class="flex-1 border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm hover:bg-slate-50">Atrás</button>
+            <button onclick="createGmailChannel()" class="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Conectar con Google</button>
+          </div>
+        </div>
+
+        <!-- Paso 2b: Telegram -->
+        <div id="add-step-telegram" class="hidden space-y-3">
+          <div>
+            <label class="text-xs font-medium text-slate-700 block mb-1">Nombre descriptivo del canal</label>
+            <input id="tg-channel-name" placeholder="Ej: Bot Ventas Turismo" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          </div>
+          <div>
+            <label class="text-xs font-medium text-slate-700 block mb-1">Bot Token</label>
+            <input id="tg-bot-token" placeholder="110201543:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <p class="text-xs text-slate-400 mt-1">Obtenelo en <b>@BotFather</b> → /newbot</p>
+          </div>
+          <div id="tg-validate-result" class="hidden text-xs rounded-lg px-3 py-2"></div>
+          <div id="tg-agents-section" class="hidden">
+            <label class="text-xs font-medium text-slate-700 block mb-1">Asignar agentes</label>
+            <div id="tg-agents-list" class="space-y-1 max-h-36 overflow-y-auto border border-slate-200 rounded-lg p-2"></div>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button onclick="backToType()" class="flex-1 border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm hover:bg-slate-50">Atrás</button>
+            <button id="tg-validate-btn" onclick="validateTgToken()" class="flex-1 border border-blue-500 text-blue-700 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-blue-50">Verificar token</button>
+            <button id="tg-create-btn" onclick="createTgChannel()" class="hidden flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">Guardar canal</button>
+          </div>
+        </div>
+
+        <!-- Saving spinner -->
+        <div id="add-step-saving" class="hidden text-center py-6 text-sm text-slate-500">
+          <div class="animate-spin inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full mb-2"></div><br>Creando canal...
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: editar canal (agentes asignados) -->
+    <div id="modal-edit-channel" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
+        <div class="flex items-center justify-between mb-5">
+          <h2 class="font-semibold text-slate-900">Editar canal</h2>
+          <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600 text-xl leading-none">&times;</button>
+        </div>
+        <div id="edit-channel-body" class="space-y-3"></div>
+        <div class="flex gap-2 pt-4">
+          <button onclick="closeEditModal()" class="flex-1 border border-slate-200 text-slate-600 px-3 py-2 rounded-lg text-sm hover:bg-slate-50">Cancelar</button>
+          <button onclick="saveChannelEdit()" class="flex-1 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold">Guardar cambios</button>
+        </div>
       </div>
     </div>
 
@@ -116,10 +191,249 @@ document.querySelectorAll('.admin-tab').forEach(btn=>{
 });
 
 let tagsData = [];
+let agentesAll = [];
+let editingChannelId = null;
+
+// ── Channels ─────────────────────────────────────────────────────────────────
+
+async function loadChannels(){
+  const channels = await api.get('/channels');
+  renderChannels(channels);
+}
+
+function channelIcon(type){ return {gmail:'✉️',telegram:'✈️',whatsapp:'💬',instagram:'📷'}[type]||'📡'; }
+
+function renderChannels(channels){
+  const el = document.getElementById('channels-list');
+  if(!channels.length){
+    el.innerHTML = '<div class="text-xs text-slate-400 py-4 text-center">No hay canales configurados. Agregá el primero.</div>';
+    return;
+  }
+  el.innerHTML = channels.map(ch=>{
+    const icon = channelIcon(ch.type);
+    const agentNames = (ch.assigned_agents||[]).map(id=>{
+      const a = agentesAll.find(x=>x.id===id);
+      return a ? a.nombre.split(' ')[0] : id;
+    }).join(', ') || 'Sin asignar';
+
+    let statusBadge, extraActions='';
+    if(ch.type==='gmail'){
+      if(ch.credentials_ok){
+        statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">Conectado</span>';
+        extraActions = `<button onclick="pollGmail('${ch.id}')" class="text-xs border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-50 text-slate-600">Hacer polling</button>`;
+      } else {
+        statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Sin OAuth</span>';
+        extraActions = `<a href="/channels/${ch.id}/gmail/auth" target="_blank" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700">Conectar Google</a>`;
+      }
+    } else if(ch.type==='telegram'){
+      if(ch.webhook_ok){
+        statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">Webhook activo</span>';
+      } else if(ch.bot_username){
+        statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">Sin webhook</span>';
+        extraActions = `<button onclick="registerWebhook('${ch.id}')" class="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-lg hover:bg-blue-700">Registrar webhook</button>`;
+      } else {
+        statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">No configurado</span>';
+      }
+    } else {
+      statusBadge = '<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">Mock</span>';
+    }
+
+    const desc = ch.type==='gmail'
+      ? (ch.email_address || ch.nombre)
+      : ch.type==='telegram'
+        ? (ch.bot_username ? `@${ch.bot_username}` : ch.nombre)
+        : ch.nombre;
+
+    return `
+      <div class="bg-white rounded-xl border border-slate-200 p-4">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="text-2xl flex-shrink-0">${icon}</span>
+            <div class="min-w-0">
+              <div class="font-semibold truncate">${escapeHtml(ch.nombre)}</div>
+              <div class="text-xs text-slate-500 truncate">${escapeHtml(desc)}</div>
+              <div class="text-xs text-slate-400 mt-0.5">Agentes: ${escapeHtml(agentNames)}</div>
+            </div>
+          </div>
+          <div class="flex flex-col items-end gap-1.5 flex-shrink-0">
+            ${statusBadge}
+          </div>
+        </div>
+        <div class="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+          ${extraActions}
+          <button onclick="openEditModal('${ch.id}')" class="text-xs border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-50 text-slate-600">Editar agentes</button>
+          <button onclick="deleteChannel('${ch.id}', '${escapeHtml(ch.nombre)}')" class="ml-auto text-xs text-red-500 hover:text-red-700 px-2 py-1">Eliminar</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+window.pollGmail = async function(channelId){
+  const btn = event.target;
+  btn.disabled=true; btn.textContent='Polling...';
+  try{
+    const res = await api.post('/poll/gmail', {channel_ids:[channelId]});
+    const count = (res.processed||[]).length;
+    btn.textContent=`${count} mensaje(s) importado(s)`;
+    btn.className='text-xs border border-green-300 px-2.5 py-1 rounded-lg text-green-700 bg-green-50';
+    setTimeout(()=>{ btn.disabled=false; btn.textContent='Hacer polling'; btn.className='text-xs border border-slate-200 px-2.5 py-1 rounded-lg hover:bg-slate-50 text-slate-600'; },3000);
+  } catch(e){
+    btn.textContent='Error'; btn.disabled=false;
+  }
+};
+
+window.registerWebhook = async function(channelId){
+  const btn = event.target;
+  btn.disabled=true; btn.textContent='Registrando...';
+  try{
+    const res = await api.post(`/channels/${channelId}/telegram/register-webhook`, {});
+    if(res.ok){
+      btn.textContent='Webhook registrado ✓';
+      btn.className='text-xs bg-green-600 text-white px-2.5 py-1 rounded-lg';
+      setTimeout(()=>loadChannels(),1500);
+    } else {
+      btn.textContent=res.error||'Error'; btn.disabled=false;
+    }
+  } catch(e){ btn.textContent='Error'; btn.disabled=false; }
+};
+
+window.deleteChannel = async function(channelId, nombre){
+  if(!confirm(`¿Eliminar el canal "${nombre}"? Esta acción no se puede deshacer.`)) return;
+  await api.delete(`/channels/${channelId}`);
+  loadChannels();
+};
+
+// ── Add channel modal ─────────────────────────────────────────────────────────
+
+window.openAddChannelModal = function(){
+  document.getElementById('modal-add-channel').classList.remove('hidden');
+  showStep('type');
+};
+window.closeAddChannelModal = function(){
+  document.getElementById('modal-add-channel').classList.add('hidden');
+  document.getElementById('tg-validate-result').classList.add('hidden');
+  document.getElementById('tg-validate-result').className='hidden text-xs rounded-lg px-3 py-2';
+  document.getElementById('tg-create-btn').classList.add('hidden');
+  document.getElementById('tg-validate-btn').classList.remove('hidden');
+  document.getElementById('gmail-agents-section').classList.add('hidden');
+  document.getElementById('tg-agents-section').classList.add('hidden');
+  ['gmail-channel-name','tg-channel-name','tg-bot-token'].forEach(id=>{ document.getElementById(id).value=''; });
+};
+
+function showStep(step){
+  ['type','gmail','telegram','saving'].forEach(s=>document.getElementById(`add-step-${s}`).classList.add('hidden'));
+  document.getElementById(`add-step-${step}`).classList.remove('hidden');
+}
+
+window.selectChannelType = function(type){
+  showStep(type);
+  const agentsList = document.getElementById(`${type==='gmail'?'gmail':'tg'}-agents-list`);
+  const agentsSection = document.getElementById(`${type==='gmail'?'gmail':'tg'}-agents-section`);
+  agentsList.innerHTML = agentesAll.map(a=>`
+    <label class="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-slate-50 rounded px-1">
+      <input type="checkbox" value="${a.id}" class="rounded">
+      <span class="text-xs">${escapeHtml(a.nombre)}</span>
+      <span class="text-xs text-slate-400">${a.area}</span>
+    </label>`).join('');
+  agentsSection.classList.remove('hidden');
+};
+
+window.backToType = function(){ showStep('type'); };
+
+window.validateTgToken = async function(){
+  const token = document.getElementById('tg-bot-token').value.trim();
+  if(!token){ alert('Ingresá un bot token.'); return; }
+  const btn = document.getElementById('tg-validate-btn');
+  btn.disabled=true; btn.textContent='Verificando...';
+  const res = await api.post('/channels/telegram/validate-token', {bot_token: token});
+  const el = document.getElementById('tg-validate-result');
+  el.classList.remove('hidden');
+  if(res.ok){
+    el.className='text-xs rounded-lg px-3 py-2 bg-green-50 border border-green-200 text-green-700';
+    el.textContent=`Token válido: @${res.bot_username} (${res.bot_name})`;
+    document.getElementById('tg-validate-btn').classList.add('hidden');
+    document.getElementById('tg-create-btn').classList.remove('hidden');
+  } else {
+    el.className='text-xs rounded-lg px-3 py-2 bg-red-50 border border-red-200 text-red-700';
+    el.textContent=`Error: ${res.error}`;
+    btn.disabled=false; btn.textContent='Verificar token';
+  }
+};
+
+window.createGmailChannel = async function(){
+  const nombre = document.getElementById('gmail-channel-name').value.trim();
+  if(!nombre){ alert('Ingresá un nombre para el canal.'); return; }
+  const checked = [...document.querySelectorAll('#gmail-agents-list input:checked')].map(i=>i.value);
+  showStep('saving');
+  const ch = await api.post('/channels', {type:'gmail', nombre, assigned_agents: checked});
+  closeAddChannelModal();
+  loadChannels();
+  // Redirect to OAuth
+  window.open(`/channels/${ch.id}/gmail/auth`, '_blank');
+};
+
+window.createTgChannel = async function(){
+  const nombre = document.getElementById('tg-channel-name').value.trim();
+  const bot_token = document.getElementById('tg-bot-token').value.trim();
+  if(!nombre){ alert('Ingresá un nombre para el canal.'); return; }
+  const checked = [...document.querySelectorAll('#tg-agents-list input:checked')].map(i=>i.value);
+  showStep('saving');
+  const ch = await api.post('/channels', {type:'telegram', nombre, bot_token, assigned_agents: checked});
+  closeAddChannelModal();
+  // Auto-register webhook
+  await api.post(`/channels/${ch.id}/telegram/register-webhook`, {});
+  loadChannels();
+};
+
+// ── Edit channel modal ────────────────────────────────────────────────────────
+
+window.openEditModal = async function(channelId){
+  editingChannelId = channelId;
+  const channels = await api.get('/channels');
+  const ch = channels.find(c=>c.id===channelId);
+  if(!ch) return;
+  const body = document.getElementById('edit-channel-body');
+  body.innerHTML = `
+    <div>
+      <label class="text-xs font-medium text-slate-700 block mb-1">Nombre del canal</label>
+      <input id="edit-channel-nombre" value="${escapeHtml(ch.nombre)}" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div>
+      <label class="text-xs font-medium text-slate-700 block mb-2">Agentes asignados</label>
+      <div class="space-y-1 max-h-48 overflow-y-auto border border-slate-200 rounded-lg p-2">
+        ${agentesAll.map(a=>`
+          <label class="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-slate-50 rounded px-1">
+            <input type="checkbox" value="${a.id}" ${(ch.assigned_agents||[]).includes(a.id)?'checked':''} class="edit-agent-check rounded">
+            <span class="text-xs">${escapeHtml(a.nombre)}</span>
+            <span class="text-xs text-slate-400">${a.area}</span>
+          </label>`).join('')}
+      </div>
+    </div>`;
+  document.getElementById('modal-edit-channel').classList.remove('hidden');
+};
+
+window.closeEditModal = function(){
+  document.getElementById('modal-edit-channel').classList.add('hidden');
+  editingChannelId = null;
+};
+
+window.saveChannelEdit = async function(){
+  const nombre = document.getElementById('edit-channel-nombre').value.trim();
+  const checked = [...document.querySelectorAll('.edit-agent-check:checked')].map(i=>i.value);
+  await api.put(`/channels/${editingChannelId}`, {nombre, assigned_agents: checked});
+  closeEditModal();
+  loadChannels();
+};
+
+// ── Main init ─────────────────────────────────────────────────────────────────
 
 async function init(){
   const [rules, crm] = await Promise.all([api.get('/channel-rules'), api.get('/crm')]);
   tagsData = crm.tags_workspace || [];
+  agentesAll = crm.agentes || [];
+
+  // Canales (dinámico)
+  loadChannels();
 
   // Reglas por canal
   document.getElementById('channel-rules-content').innerHTML = Object.entries(rules).map(([ch, rule])=>`
