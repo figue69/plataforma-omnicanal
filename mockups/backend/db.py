@@ -76,6 +76,7 @@ def load_crm() -> Dict[str, Any]:
     crm.setdefault("pasajeros", [])
     crm.setdefault("tags_workspace", [])
     crm.setdefault("channel_rules_default", {})
+    crm.setdefault("channels", [])  # instancias de canales (Gmail, Telegram, WA, etc.)
     # Agents always come from the agents table, not from the blob
     crm["agentes"] = list_agents()
     return crm
