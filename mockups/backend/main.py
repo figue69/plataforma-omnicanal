@@ -39,7 +39,7 @@ from providers import telegram_bot as tg_provider
 from providers import tourbo as tourbo_provider
 from providers import whatsapp as wa
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent   # absoluto siempre, aunque __file__ sea relativo
 MOCKUPS = ROOT.parent  # mockups/
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -155,20 +155,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Servir frontend estático desde /produto y /cliente-test
+# Servir frontend estático desde /producto y /cliente-test
 # (solo cuando los directorios existen — en local puede no existir la ruta relativa)
 _PRODUTO = MOCKUPS / "producto"
 _CLIENTE = MOCKUPS / "cliente-test"
 
 if _PRODUTO.exists():
     app.mount("/producto", StaticFiles(directory=str(_PRODUTO), html=True), name="produto")
+else:
+    print(f"[WARN] Static dir not found: {_PRODUTO}")
 if _CLIENTE.exists():
     app.mount("/cliente-test", StaticFiles(directory=str(_CLIENTE), html=True), name="cliente")
 
 
 @app.get("/", include_in_schema=False)
 def root():
-    return RedirectResponse("/produto/01-login.html")
+    return RedirectResponse("/producto/01-login.html")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
